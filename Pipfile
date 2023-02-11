@@ -1,0 +1,23 @@
+[[source]]
+url = "https://pypi.org/simple"
+verify_ssl = true
+name = "pypi"
+
+[packages]
+torch = "*"
+torchvision = "*"
+torchaudio = "*"
+termcolor = "*"
+beautifulsoup4 = "*"
+matplotlib = "*"
+chevron = "*"
+
+[dev-packages]
+black = "*"
+
+[requires]
+python_version = "3.10"
+
+[scripts]
+train = "bash scripts/train.bash"
+scrape = "bash scripts/scrape.bash"

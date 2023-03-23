@@ -40,7 +40,7 @@ important("Parsing args")
 parser = argparse.ArgumentParser()
 parser.add_argument("--max-epochs", type=int, default=50)
 parser.add_argument("--batch-size", type=int, default=4)
-parser.add_argument("--max-lr", type=float, default=0.00001)
+parser.add_argument("--max-lr", type=float, default=0.001)
 
 args = parser.parse_args()
 log(pretty_format(args.__dict__))
@@ -83,8 +83,8 @@ scheduler = torch.optim.lr_scheduler.OneCycleLR(
     pct_start=pct_start,
     three_phase=True,
     anneal_strategy="linear",
-    base_momentum=0.1,
-    max_momentum=0.1,
+    base_momentum=0.5,
+    max_momentum=0.5,
 )
 scheduler_d = torch.optim.lr_scheduler.OneCycleLR(
     optimizer_d,
@@ -170,7 +170,7 @@ for epoch in range(args.max_epochs):
         loss_d_factor = 1.0 / max(disc_real_loss.item(), 1.0)
         loss_d_scaled = loss_d * loss_d_factor
         loss_r = vocab_size * criterion(y_pred, y.to(device))
-        loss = loss_d_scaled * min(loss_r.item(), 1.0) + loss_r
+        loss = loss_d_scaled + loss_r
 
         loss_history.append([loss.item(), 1])
         loss_history_real.append([loss_r.item(), 1])
@@ -215,14 +215,14 @@ trained_model = {
     "discriminator_scheduler": scheduler_d.state_dict(),
 }
 torch.save(trained_model, "../trained_model")
-plot_simple_array(
-    [
-        [round(math.log10(x[0] + 0.01), 2) for x in loss_history],
-        [round(math.log10(x[0] + 0.01), 2) for x in loss_history_real],
-        [round(math.log10(x[0] + 0.01), 2) for x in loss_history_discriminator],
-    ],
-    "../loss_history.png",
-)
+# plot_simple_array(
+#     [
+#         [round(math.log10(x[0] + 0.01), 2) for x in loss_history],
+#         [round(math.log10(x[0] + 0.01), 2) for x in loss_history_real],
+#         [round(math.log10(x[0] + 0.01), 2) for x in loss_history_discriminator],
+#     ],
+#     "../loss_history.png",
+# )
 log(predict(model, device, config, input_text), multiline=True, type=LogTypes.DATA)
 
 important("Done")

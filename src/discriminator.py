@@ -6,9 +6,9 @@ from prepare_data import vocab_size
 def weights_init(m):
     classname = m.__class__.__name__
     if classname.find("Conv") != -1:
-        nn.init.xavier_normal_(m.weight.data, 0.5)
+        nn.init.xavier_normal_(m.weight.data, 1.0)
     elif classname.find("Linear") != -1:
-        nn.init.xavier_normal_(m.weight.data, 0.2)
+        nn.init.xavier_normal_(m.weight.data, 1.0)
 
 
 class Discriminator(nn.Module):
@@ -26,8 +26,8 @@ class Discriminator(nn.Module):
         )
 
         self.lstm = nn.LSTM(
-            input_size=self.lstm_size,
-            hidden_size=self.lstm_size,
+            input_size=self.lstm_size * 2,
+            hidden_size=self.lstm_size * 2,
             num_layers=self.num_layers,
             dropout=0.2,
         )
@@ -73,12 +73,12 @@ class Discriminator(nn.Module):
         c = torch.flatten(c)
         c = torch.unflatten(c, 0, (-1, input.shape[1], self.lstm_size))
         input = self.preparation_layer(input)
-        output, state = self.lstm(input, prev_state)
-        s = torch.cat((output, c), dim=2)
-        return self.fc(s), state
+        s = torch.cat((input, c), dim=2)
+        output, state = self.lstm(s, prev_state)
+        return self.fc(output), state
 
     def init_state(self, sequence_length):
         return (
-            torch.zeros(self.num_layers, sequence_length, self.lstm_size),
-            torch.zeros(self.num_layers, sequence_length, self.lstm_size),
+            torch.zeros(self.num_layers, sequence_length, self.lstm_size * 2),
+            torch.zeros(self.num_layers, sequence_length, self.lstm_size * 2),
         )

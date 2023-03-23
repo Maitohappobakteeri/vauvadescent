@@ -10,7 +10,7 @@ def weights_init(m):
     if classname.find("Conv") != -1:
         nn.init.xavier_normal_(m.weight.data, 0.5)
     elif classname.find("Linear") != -1:
-        nn.init.xavier_normal_(m.weight.data, 0.2)
+        nn.init.xavier_normal_(m.weight.data, 1.0)
 
 
 class Model(nn.Module):
@@ -23,8 +23,8 @@ class Model(nn.Module):
         self.embedding = nn.Embedding(vocab_size, self.embedding_dim)
 
         self.lstm = nn.LSTM(
-            input_size=self.embedding_dim,
-            hidden_size=self.lstm_size,
+            input_size=self.embedding_dim  * 2,
+            hidden_size=self.lstm_size * 2,
             num_layers=self.num_layers,
             dropout=0.2,
         )
@@ -73,15 +73,14 @@ class Model(nn.Module):
         c = torch.flatten(c)
         c = torch.unflatten(c, 0, (-1, x.shape[1], self.lstm_size))
 
-        output, state = self.lstm(e, prev_state)
-
-        s = torch.cat((output, c), dim=2)
-        logits = self.fc(s)
+        s = torch.cat((e, c), dim=2)
+        output, state = self.lstm(s, prev_state)
+        logits = self.fc(output)
 
         return logits, state
 
     def init_state(self, sequence_length):
         return (
-            torch.zeros(self.num_layers, sequence_length, self.lstm_size),
-            torch.zeros(self.num_layers, sequence_length, self.lstm_size),
+            torch.zeros(self.num_layers, sequence_length, self.lstm_size * 2),
+            torch.zeros(self.num_layers, sequence_length, self.lstm_size * 2),
         )

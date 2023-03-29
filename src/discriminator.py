@@ -6,9 +6,9 @@ from prepare_data import vocab_size
 def weights_init(m):
     classname = m.__class__.__name__
     if classname.find("Conv") != -1:
-        nn.init.xavier_normal_(m.weight.data, 1.0)
+        nn.init.xavier_normal_(m.weight.data, 2.0)
     elif classname.find("Linear") != -1:
-        nn.init.xavier_normal_(m.weight.data, 1.0)
+        nn.init.xavier_normal_(m.weight.data, 2.0)
 
 
 class Discriminator(nn.Module):
@@ -39,11 +39,11 @@ class Discriminator(nn.Module):
             nn.Dropout(0.05),
             nn.Linear(self.lstm_size * 3, self.lstm_size * 4),
             nn.Tanh(),
-            nn.Dropout(0.05),
-            nn.Linear(self.lstm_size * 4, self.lstm_size * 4),
+            nn.Dropout(0.1),
+            nn.Linear(self.lstm_size * 4, self.lstm_size * 8),
             nn.Tanh(),
-            nn.Dropout(0.01),
-            nn.Linear(self.lstm_size * 4, 1),
+            nn.Dropout(0.2),
+            nn.Linear(self.lstm_size * 8, 1),
             nn.Sigmoid(),
         )
 

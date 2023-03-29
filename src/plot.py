@@ -12,8 +12,10 @@ def plot_simple_array(x_list, save_as_filename):
     for x in x_list:
         y = [y for y in range(len(x))]
         axs.plot(y, x)
+    for x in x_list:
+        y = [y for y in range(len(x))]
         p5, p4, a, b, c, d = np.polyfit(y, x, 5)
-        predict_amount = min(500, math.floor((len(x) ** 0.5)))
+        predict_amount = min(10_000, math.floor((len(x) ** 0.6)))
         axs.plot(
             [y for y in range(len(x) + predict_amount)],
             [

@@ -95,7 +95,7 @@ def log(
     multiline=False,
 ):
     global was_repeating_status, repeating_status_animation, status_state, prev_status_state, prev_time
-    term_width = get_terminal_size((100, 20))[0]
+    term_width = get_terminal_size((100, 20))[0] -5
     repeating_status_animation += 1
 
     if repeating_status:

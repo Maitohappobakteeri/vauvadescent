@@ -27,6 +27,7 @@ def predict(model, device, config, input_text, split_to_posts=False, max_predict
 
     def logits_to_index(t):
         arr = t.detach().cpu().numpy()
+        arr = arr - np.min(arr)
         arr = np.power(arr, 1.0 / randomess)
         normalized = np.divide(arr, np.sum(arr))
         for (i, n) in enumerate(normalized):

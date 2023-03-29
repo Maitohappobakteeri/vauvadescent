@@ -66,7 +66,7 @@ discriminator = Discriminator(config).to(device)
 model.train()
 
 criterion = nn.BCELoss(reduction="mean")
-lr_start_div_factor = 100
+lr_start_div_factor = 10
 optimizer = optim.Adam(
     model.parameters(), lr=config.max_lr / lr_start_div_factor, betas=(0.5, 0.9)
 )
@@ -169,7 +169,9 @@ for epoch in range(args.max_epochs):
         loss_d = criterion(disc_pred, real_labes)
         loss_d_factor = 1.0 / max(disc_real_loss.item(), 1.0)
         loss_d_scaled = loss_d * loss_d_factor
-        loss_r = vocab_size * criterion(y_pred, y.to(device))
+        y = y.to(device)
+        y_pred = torch.divide(y_pred, torch.add(torch.max(y_pred), 1e-6))
+        loss_r = vocab_size * criterion(y_pred, y)
         loss = loss_d_scaled + loss_r
 
         loss_history.append([loss.item(), 1])
@@ -215,14 +217,13 @@ trained_model = {
     "discriminator_scheduler": scheduler_d.state_dict(),
 }
 torch.save(trained_model, "../trained_model")
-# plot_simple_array(
-#     [
-#         [round(math.log10(x[0] + 0.01), 2) for x in loss_history],
-#         [round(math.log10(x[0] + 0.01), 2) for x in loss_history_real],
-#         [round(math.log10(x[0] + 0.01), 2) for x in loss_history_discriminator],
-#     ],
-#     "../loss_history.png",
-# )
+plot_simple_array(
+    [
+        [round(math.log10(x[0] + 0.01), 2) for x in loss_history],
+        [round(math.log10(x[0] + 0.01), 2) for x in loss_history_real],
+        [round(math.log10(x[0] + 0.01), 2) for x in loss_history_discriminator],
+    ],
+    "../loss_history.png",
+)
 log(predict(model, device, config, input_text), multiline=True, type=LogTypes.DATA)
-
-important("Done")
+important("Done"),

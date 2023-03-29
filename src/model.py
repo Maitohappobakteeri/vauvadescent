@@ -52,11 +52,11 @@ class Model(nn.Module):
             nn.Dropout(0.05),
             nn.Linear(self.lstm_size * 3, self.lstm_size * 4),
             nn.Tanh(),
-            nn.Dropout(0.05),
-            nn.Linear(self.lstm_size * 4, self.lstm_size * 4),
+            nn.Dropout(0.1),
+            nn.Linear(self.lstm_size * 4, self.lstm_size * 8),
             nn.Tanh(),
-            nn.Dropout(0.01),
-            nn.Linear(self.lstm_size * 4, vocab_size),
+            nn.Dropout(0.2),
+            nn.Linear(self.lstm_size * 8, vocab_size),
             nn.Sigmoid(),
         )
 

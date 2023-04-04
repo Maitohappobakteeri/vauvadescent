@@ -32,7 +32,7 @@ import numpy as np
 import math
 import json
 
-device = "cpu"
+device = "cuda"
 
 important("VAUVADESCENT")
 important("Parsing args")
@@ -136,23 +136,25 @@ for epoch in range(args.max_epochs):
     state_h, state_c = model.init_state(config.sequence_length)
     state_h, state_c = state_h.to(device), state_c.to(device)
     d_state_h, d_state_c = discriminator.init_state(config.sequence_length)
+    d_state_h, d_state_c = d_state_h.to(device), d_state_c.to(device)
     epoch_losses = []
 
     set_substeps(len(dataloader))
     for batch, (x, c, y) in enumerate(dataloader):
+        c = c.to(device)
         optimizer_d.zero_grad()
         disc_real, (d_state_h, d_state_c) = discriminator(
             (y.to(device), c), (d_state_h, d_state_c)
         )
-        real_labes = torch.ones((y.shape[0], y.shape[1], 1))
+        real_labes = torch.ones((y.shape[0], y.shape[1], 1)).to(device)
         disc_real_loss = criterion(disc_real, real_labes)
         d_state_h = d_state_h.detach()
         d_state_c = d_state_c.detach()
         disc_real_loss.backward()
         # optimizer_d.step()
         # optimizer_d.zero_grad()
-        y_pred, (_) = model((x.to(device), c.to(device)), (state_h, state_c))
-        fake_labels = torch.zeros((y.shape[0], y.shape[1], 1))
+        y_pred, (_) = model((x.to(device), c), (state_h, state_c))
+        fake_labels = torch.zeros((y.shape[0], y.shape[1], 1)).to(device)
         disc_fake, (_) = discriminator((y_pred, c), (d_state_h, d_state_c))
         disc_fake_loss = criterion(disc_fake, fake_labels) * (
             1.0 / max(disc_real_loss.item(), 1.0)
@@ -162,10 +164,10 @@ for epoch in range(args.max_epochs):
 
         optimizer.zero_grad()
         y_pred, (state_h, state_c) = model(
-            (x.to(device), c.to(device)), (state_h, state_c)
+            (x.to(device), c), (state_h, state_c)
         )
         disc_pred, (_) = discriminator((y_pred, c), (d_state_h, d_state_c))
-        real_labes = torch.ones((y.shape[0], y.shape[1], 1))
+        real_labes = torch.ones((y.shape[0], y.shape[1], 1)).to(device)
         loss_d = criterion(disc_pred, real_labes)
         loss_d_factor = 1.0 / max(disc_real_loss.item(), 1.0)
         loss_d_scaled = loss_d * loss_d_factor

@@ -10,14 +10,29 @@ import argparse
 import common
 from model import Model
 from config import Configuration
-from prepare_data import SpecialCharacters, vocab_size, split_to_characters, words_to_lookup, set_substeps
+from prepare_data import (
+    SpecialCharacters,
+    vocab_size,
+    split_to_characters,
+    words_to_lookup,
+    set_substeps,
+)
 import torch
 from torch import nn, optim
 import os
 import numpy as np
 import math
 
-def predict(model, device, config, input_text, split_to_posts=False, max_predict_chars=400, randomess=1.0):
+
+def predict(
+    model,
+    device,
+    config,
+    input_text,
+    split_to_posts=False,
+    max_predict_chars=400,
+    randomess=1.0,
+):
     important("Predicting")
     vocab = common.load_json_file(os.path.join(common.cache_dir, "characters.json"))
     words = vocab["words"]
@@ -30,7 +45,7 @@ def predict(model, device, config, input_text, split_to_posts=False, max_predict
         arr = arr - np.min(arr)
         arr = np.power(arr, 1.0 / randomess)
         normalized = np.divide(arr, np.sum(arr))
-        for (i, n) in enumerate(normalized):
+        for i, n in enumerate(normalized):
             normalized[i] = n if not math.isnan(n) else 0.01
         normalized = np.divide(normalized, np.sum(normalized))
         return np.random.choice([i for i in range(vocab_size)], p=normalized)
@@ -52,19 +67,24 @@ def predict(model, device, config, input_text, split_to_posts=False, max_predict
 
     all_input = [char_to_index[c] for c in split_to_characters(word_lookup, input_text)]
     input_prev = all_input[config.context_length :]
-    input = torch.from_numpy(np.array(input_prev, np.int32)).unsqueeze(
-        0
-    ).to(device), torch.from_numpy(
+    input = torch.from_numpy(np.array(input_prev, np.int32)).unsqueeze(0).to(
+        device
+    ), torch.from_numpy(
         np.array(
             [
                 [
-                    all_input[i : i + config.context_length]
+                    [
+                        all_input[-1 - i - ii] if i + ii < len(all_input) else 0
+                        for ii in range(0, config.context_length)
+                    ]
                     for i in range(len(input_prev))
                 ]
             ],
             np.int32,
         )
-    ).to(device)
+    ).to(
+        device
+    )
     model.eval()
     state_h, state_c = model.init_state(input[0].shape[1])
 
@@ -73,7 +93,9 @@ def predict(model, device, config, input_text, split_to_posts=False, max_predict
     set_status_state(ProgressStatus(max_character_amount))
     with torch.no_grad():
         pred_indices = all_input
-        pred, (state_h, state_c) = model(input, (state_h.to(device), state_c.to(device)))
+        pred, (state_h, state_c) = model(
+            input, (state_h.to(device), state_c.to(device))
+        )
 
         pred = pred[:, -1:, :]
         pred_indices.append(logits_to_index(pred[0, 0, :]))
@@ -84,7 +106,9 @@ def predict(model, device, config, input_text, split_to_posts=False, max_predict
             state_h = state_h[:, -1:, :]
             pred, (state_h, state_c) = model(
                 (
-                    torch.from_numpy(np.array([[pred_indices[-1]]], np.int32)).to(device),
+                    torch.from_numpy(np.array([[pred_indices[-1]]], np.int32)).to(
+                        device
+                    ),
                     torch.from_numpy(
                         np.array([[pred_indices[-config.context_length :]]])
                     ).to(device),
@@ -92,11 +116,11 @@ def predict(model, device, config, input_text, split_to_posts=False, max_predict
                 (state_h.contiguous().to(device), state_c.contiguous().to(device)),
             )
 
-            predicted_index= logits_to_index(pred[0, 0, :])
+            predicted_index = logits_to_index(pred[0, 0, :])
             if i >= min_character_amount and is_new_post(predicted_index):
                 break
             pred_indices.append(predicted_index)
-            
+
     mapped = [index_to_char_fun(i) for i in pred_indices]
     if not split_to_posts:
         return "".join(mapped)
@@ -112,6 +136,7 @@ def predict(model, device, config, input_text, split_to_posts=False, max_predict
         posts.append("".join(current_post))
         return posts
 
+
 def initialize_for_predict():
     device = "cpu"
     important("VAUVADESCENT")
@@ -122,12 +147,17 @@ def initialize_for_predict():
     config = Configuration(args)
     model = Model(config).to(device)
     if os.path.isfile("../trained_model"):
-        trained_model = torch.load("../trained_model", map_location=torch.device(device))
+        trained_model = torch.load(
+            "../trained_model", map_location=torch.device(device)
+        )
         model.load_state_dict(trained_model["model"])
     return model, device, config
+
 
 if __name__ == "__main__":
     model, device, config = initialize_for_predict()
     model.eval()
-    input_text = "Auttakaa! Mitä teen, kun mun naapurit ei lopeta ees yöllä ja en saa nukuttua"
+    input_text = (
+        "Auttakaa! Mitä teen, kun mun naapurit ei lopeta ees yöllä ja en saa nukuttua"
+    )
     log(predict(model, device, config, input_text), multiline=True, type=LogTypes.DATA)

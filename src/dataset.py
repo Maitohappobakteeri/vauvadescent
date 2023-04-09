@@ -22,7 +22,10 @@ class Dataset(torch.utils.data.Dataset):
         self.topics = common.list_all_files(os.path.join(common.cache_dir, "posts"))
         self.step_length = self.args.sequence_length
         self.character_labels = np.array(
-            [[1 if n == i else 1e-6 for n in range(vocab_size)] for i in range(vocab_size)],
+            [
+                [1 if n == i else 1e-6 for n in range(vocab_size)]
+                for i in range(vocab_size)
+            ],
             np.float32,
         )
 
@@ -47,17 +50,21 @@ class Dataset(torch.utils.data.Dataset):
                 topic.append(
                     (
                         np.array(topic_data[i : i + self.step_length], np.int32),
-                        np.array(topic_data[i + 1 : i + 1 + self.step_length], np.int32),
+                        np.array(
+                            topic_data[i + 1 : i + 1 + self.step_length], np.int32
+                        ),
                         np.array(
                             [
                                 [
-                                    topic_data[i + s - ii] if i + s - ii >= 0 and i + s - ii < len(topic_data) else 0
-                                    for ii in range(1, 1 + self.config.context_length)
+                                    topic_data[i + s - ii]
+                                    if i + s - ii >= 0 and i + s - ii < len(topic_data)
+                                    else 0
+                                    for ii in range(0, self.config.context_length)
                                 ]
                                 for s in range(self.step_length)
                             ],
                             np.int32,
-                        )
+                        ),
                     )
                 )
             self.batches.append(topic)

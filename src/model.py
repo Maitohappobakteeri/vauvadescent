@@ -8,7 +8,7 @@ from prepare_data import vocab_size
 def weights_init(m):
     classname = m.__class__.__name__
     if classname.find("Conv") != -1:
-        nn.init.xavier_normal_(m.weight.data, 0.5)
+        nn.init.xavier_normal_(m.weight.data, 1.0)
     elif classname.find("Linear") != -1:
         nn.init.xavier_normal_(m.weight.data, 1.0)
 
@@ -16,47 +16,58 @@ def weights_init(m):
 class Model(nn.Module):
     def __init__(self, config):
         super(Model, self).__init__()
-        self.embedding_dim = 128
-        self.lstm_size = 128
+        self.embedding_dim = 16
+        self.lstm_size = 16
         self.num_layers = 6
 
         self.embedding = nn.Embedding(vocab_size, self.embedding_dim)
 
+        self.pre_lstm = nn.Sequential(
+            nn.Linear(self.lstm_size * 8, self.lstm_size * 16),
+            nn.ReLU(True),
+            #
+            nn.Linear(self.lstm_size * 16, self.lstm_size * 8),
+            nn.Tanh(),
+        )
+
         self.lstm = nn.LSTM(
-            input_size=self.embedding_dim  * 2,
-            hidden_size=self.lstm_size * 2,
+            input_size=self.embedding_dim * 8,
+            hidden_size=self.lstm_size * 8,
             num_layers=self.num_layers,
-            dropout=0.2,
+            dropout=0.0,
         )
 
         self.context_layer = nn.Sequential(
             nn.Conv1d(
-                config.context_length, self.lstm_size // 3, 16, stride=4, padding=2
+                config.context_length, self.lstm_size * 4, 8, stride=2, padding=2
             ),
             nn.ReLU(),
-            nn.BatchNorm1d(self.lstm_size // 3),
-            nn.Conv1d(
-                self.lstm_size // 3, self.lstm_size // 2, 16, stride=4, padding=2
-            ),
+            nn.BatchNorm1d(self.lstm_size * 4),
+            #
+            nn.Conv1d(self.lstm_size * 4, self.lstm_size * 6, 8, stride=2, padding=2),
             nn.ReLU(),
-            nn.BatchNorm1d(self.lstm_size // 2),
-            nn.Conv1d(self.lstm_size // 2, self.lstm_size, 5),
-            nn.BatchNorm1d(self.lstm_size),
-            nn.Sigmoid(),
+            nn.BatchNorm1d(self.lstm_size * 6),
+            #
+            nn.Conv1d(self.lstm_size * 6, self.lstm_size * 8, 1),
+            nn.ReLU(),
+            nn.BatchNorm1d(self.lstm_size * 8),
+            #
+            nn.Conv1d(self.lstm_size * 8, self.lstm_size * 16, 1),
+            nn.ReLU(),
+            nn.BatchNorm1d(self.lstm_size * 16),
+            #
+            nn.Conv1d(self.lstm_size * 16, self.lstm_size * 7, 2),
+            nn.Tanh(),
         )
 
         self.fc = nn.Sequential(
-            nn.Dropout(0.05),
-            nn.Linear(self.lstm_size * 2, self.lstm_size * 3),
-            nn.Tanh(),
-            nn.Dropout(0.05),
-            nn.Linear(self.lstm_size * 3, self.lstm_size * 4),
-            nn.Tanh(),
-            nn.Dropout(0.1),
-            nn.Linear(self.lstm_size * 4, self.lstm_size * 8),
-            nn.Tanh(),
-            nn.Dropout(0.2),
-            nn.Linear(self.lstm_size * 8, vocab_size),
+            nn.Linear(self.lstm_size * 8, self.lstm_size * 16),
+            nn.ReLU(),
+            #
+            nn.Linear(self.lstm_size * 16, self.lstm_size * 32),
+            nn.ReLU(),
+            #
+            nn.Linear(self.lstm_size * 32, vocab_size),
             nn.Sigmoid(),
         )
 
@@ -71,9 +82,10 @@ class Model(nn.Module):
         c = self.embedding(c)
         c = self.context_layer(c)
         c = torch.flatten(c)
-        c = torch.unflatten(c, 0, (-1, x.shape[1], self.lstm_size))
+        c = torch.unflatten(c, 0, (-1, x.shape[1], self.lstm_size * 7))
 
         s = torch.cat((e, c), dim=2)
+        s = self.pre_lstm(s)
         output, state = self.lstm(s, prev_state)
         logits = self.fc(output)
 
@@ -81,6 +93,6 @@ class Model(nn.Module):
 
     def init_state(self, sequence_length):
         return (
-            torch.zeros(self.num_layers, sequence_length, self.lstm_size * 2),
-            torch.zeros(self.num_layers, sequence_length, self.lstm_size * 2),
+            torch.zeros(self.num_layers, sequence_length, self.lstm_size * 8),
+            torch.zeros(self.num_layers, sequence_length, self.lstm_size * 8),
         )

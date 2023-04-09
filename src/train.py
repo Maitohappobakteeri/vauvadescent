@@ -39,7 +39,7 @@ important("Parsing args")
 
 parser = argparse.ArgumentParser()
 parser.add_argument("--max-epochs", type=int, default=50)
-parser.add_argument("--batch-size", type=int, default=4)
+parser.add_argument("--batch-size", type=int, default=8)
 parser.add_argument("--max-lr", type=float, default=0.001)
 
 args = parser.parse_args()
@@ -65,26 +65,30 @@ model = Model(config).to(device)
 discriminator = Discriminator(config).to(device)
 model.train()
 
+momentum = 0.9
 criterion = nn.BCELoss(reduction="mean")
 lr_start_div_factor = 10
 optimizer = optim.Adam(
-    model.parameters(), lr=config.max_lr / lr_start_div_factor, betas=(0.5, 0.9)
+    model.parameters(), lr=config.max_lr / lr_start_div_factor, betas=(momentum, 0.9)
 )
 optimizer_d = optim.Adam(
-    discriminator.parameters(), lr=config.max_lr / lr_start_div_factor, betas=(0.5, 0.9)
+    discriminator.parameters(),
+    lr=config.max_lr / lr_start_div_factor,
+    betas=(momentum, 0.9),
 )
 total_steps = 10_000
-pct_start = 0.001
+pct_start = 0.0004
 scheduler = torch.optim.lr_scheduler.OneCycleLR(
     optimizer,
     max_lr=config.max_lr,
     div_factor=lr_start_div_factor,
     total_steps=total_steps,
     pct_start=pct_start,
-    three_phase=True,
+    three_phase=False,
     anneal_strategy="linear",
-    base_momentum=0.5,
-    max_momentum=0.5,
+    base_momentum=momentum,
+    max_momentum=momentum,
+    final_div_factor=1e9,
 )
 scheduler_d = torch.optim.lr_scheduler.OneCycleLR(
     optimizer_d,
@@ -92,10 +96,11 @@ scheduler_d = torch.optim.lr_scheduler.OneCycleLR(
     div_factor=lr_start_div_factor,
     total_steps=total_steps,
     pct_start=pct_start,
-    three_phase=True,
+    three_phase=False,
     anneal_strategy="linear",
-    base_momentum=0.5,
-    max_momentum=0.5,
+    base_momentum=momentum,
+    max_momentum=momentum,
+    final_div_factor=1e9,
 )
 
 if os.path.isfile("../trained_model"):

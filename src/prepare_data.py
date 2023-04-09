@@ -1,27 +1,34 @@
 import common
 import scrape
-from log import important, log, pretty_format, ProgressStatus, set_status_state, set_substeps, warning
+from log import (
+    important,
+    log,
+    pretty_format,
+    ProgressStatus,
+    set_status_state,
+    set_substeps,
+    warning,
+    LogTypes,
+)
 
 from collections import Counter
 import os
 from enum import Enum
 
 vowels = [c for c in "aeiouyåäö".upper()] + [c for c in "aeiouyåäö"]
-vocab_size = 2_000
-word_amount = 1_000
+vocab_size = 500
+word_amount = 100
 min_word_length = 4
+max_syllable_length = 2
+
 
 def split_to_words(post):
     post = [post]
-    separators = [" ", ":", ";", "=", ",", ".", "!", "?", "-", "\""]
+    separators = [" ", ":", ";", "=", ",", ".", "!", "?", "-", '"']
     for s in separators:
-        post = [
-            w
-            for p in post
-            for w in p.split(s) 
-            if len(w) >= min_word_length
-        ]
+        post = [w for p in post for w in p.split(s) if len(w) >= min_word_length]
     return post
+
 
 def words_to_lookup(words):
     d = {}
@@ -32,22 +39,32 @@ def words_to_lookup(words):
         d[c].append(w)
     return d
 
+
 def split_to_characters(common_words, post):
     all_parts = []
     current_part = []
     word_remaining = 0
-    for (i, c) in enumerate(post):
+    for i, c in enumerate(post):
         if word_remaining == -1:
             all_parts.append("".join(current_part))
             current_part = []
-            word = next((w for w in common_words.get(post[i:i+min_word_length], []) if post.startswith(w, i)), None)
+            word = next(
+                (
+                    w
+                    for w in common_words.get(post[i : i + min_word_length], [])
+                    if post.startswith(w, i)
+                ),
+                None,
+            )
             if word is not None:
                 word_remaining = len(word)
 
         if word_remaining > 0:
             word_remaining -= 1
 
-        if word_remaining == -1 and (c not in vowels or len(current_part) > 2):
+        if word_remaining == -1 and (
+            c not in vowels or len(current_part) > max_syllable_length
+        ):
             if len(current_part):
                 all_parts.append("".join(current_part))
                 current_part = []
@@ -70,6 +87,7 @@ class SpecialCharacters(Enum):
     NEW_POST = "new_post"
     VOCAB_PADDING = "vocab_padding"
 
+
 if __name__ == "__main__":
     important("Preparing training data")
 
@@ -85,11 +103,9 @@ if __name__ == "__main__":
         log(f"Loading {filename}", repeating_status=True)
         return common.load_json_file(filename)
 
-
     important("Loading topics")
     set_status_state(ProgressStatus(len(dataset_filenames)))
     data = [load_topic(filename) for filename in dataset_filenames]
-
 
     set_status_state(ProgressStatus(len(data)))
     all_words = Counter()
@@ -108,15 +124,21 @@ if __name__ == "__main__":
     set_status_state(ProgressStatus(len(data)))
     all_characters = Counter()
     for topic in data:
-        log(f"Counting unique characters ({len(all_characters)})", repeating_status=True)
+        log(
+            f"Counting unique characters ({len(all_characters)})", repeating_status=True
+        )
         set_substeps(len(topic))
         for post in topic:
-            log(f"Counting unique characters ({len(all_characters)})", repeating_status=True, substep=True)
+            log(
+                f"Counting unique characters ({len(all_characters)})",
+                repeating_status=True,
+                substep=True,
+            )
             for char in list(set(split_to_characters(word_lookup, post))):
                 if char not in most_common_words:
                     all_characters[char] += 1
                     if len(char) > 3:
-                        log(f"\"{char}\"")
+                        log(f'"{char}"')
 
     important(f"Unique character count: {len(all_characters)}")
 
@@ -124,27 +146,26 @@ if __name__ == "__main__":
     most_common = all_characters.most_common()
 
     log("Listing characters")
-    unused_vocab = vocab_size - len(most_common_words) - len(most_common) - len(SpecialCharacters)
+    unused_vocab = (
+        vocab_size - len(most_common_words) - len(most_common) - len(SpecialCharacters)
+    )
     most_common_words.reverse()
-    chars_by_usage = [c.value for c in SpecialCharacters] + [
-        word for (word, _) in most_common
-    ] + [
-        SpecialCharacters.VOCAB_PADDING.value for i in range(unused_vocab)
-    ] + [
-        word for word in most_common_words
-    ]
+    chars_by_usage = (
+        [c.value for c in SpecialCharacters]
+        + [word for (word, _) in most_common]
+        + [SpecialCharacters.VOCAB_PADDING.value for i in range(unused_vocab)]
+        + [word for word in most_common_words]
+    )
     log(f"Unused slots in vocab remaining: {unused_vocab}")
 
     log("Creating character to index mappings")
     char_to_index = {c: i for (i, c) in enumerate(chars_by_usage)}
     index_to_char = {i: c for (c, i) in char_to_index.items()}
 
-
     def post_to_index(post):
         post = split_to_characters(word_lookup, post)
         ids = [char_to_index[c] for c in [SpecialCharacters.NEW_POST.value] + post]
         return ids
-
 
     log("Writing characters.json")
     common.write_json_file(

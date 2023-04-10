@@ -18,21 +18,21 @@ class Model(nn.Module):
         super(Model, self).__init__()
         self.embedding_dim = 16
         self.lstm_size = 16
-        self.num_layers = 6
+        self.num_layers = 1
 
         self.embedding = nn.Embedding(vocab_size, self.embedding_dim)
 
         self.pre_lstm = nn.Sequential(
-            nn.Linear(self.lstm_size * 8, self.lstm_size * 16),
+            nn.Linear(self.lstm_size * 16, self.lstm_size * 32),
             nn.ReLU(True),
             #
-            nn.Linear(self.lstm_size * 16, self.lstm_size * 8),
+            nn.Linear(self.lstm_size * 32, self.lstm_size * 16),
             nn.Tanh(),
         )
 
         self.lstm = nn.LSTM(
-            input_size=self.embedding_dim * 8,
-            hidden_size=self.lstm_size * 8,
+            input_size=self.embedding_dim * 16,
+            hidden_size=self.lstm_size * 16,
             num_layers=self.num_layers,
             dropout=0.0,
         )
@@ -56,18 +56,20 @@ class Model(nn.Module):
             nn.ReLU(),
             nn.BatchNorm1d(self.lstm_size * 16),
             #
-            nn.Conv1d(self.lstm_size * 16, self.lstm_size * 7, 2),
+            nn.Conv1d(self.lstm_size * 16, self.lstm_size * 15, 2),
             nn.Tanh(),
         )
 
         self.fc = nn.Sequential(
-            nn.Linear(self.lstm_size * 8, self.lstm_size * 16),
-            nn.ReLU(),
-            #
             nn.Linear(self.lstm_size * 16, self.lstm_size * 32),
             nn.ReLU(),
+            nn.Dropout(0.01),
             #
-            nn.Linear(self.lstm_size * 32, vocab_size),
+            nn.Linear(self.lstm_size * 32, self.lstm_size * 64),
+            nn.ReLU(),
+            nn.Dropout(0.01),
+            #
+            nn.Linear(self.lstm_size * 64, vocab_size),
             nn.Sigmoid(),
         )
 
@@ -82,17 +84,18 @@ class Model(nn.Module):
         c = self.embedding(c)
         c = self.context_layer(c)
         c = torch.flatten(c)
-        c = torch.unflatten(c, 0, (-1, x.shape[1], self.lstm_size * 7))
+        c = torch.unflatten(c, 0, (-1, x.shape[1], self.lstm_size * 15))
 
         s = torch.cat((e, c), dim=2)
         s = self.pre_lstm(s)
         output, state = self.lstm(s, prev_state)
         logits = self.fc(output)
+        logits = torch.divide(logits, torch.add(torch.max(logits), 1e-6))
 
         return logits, state
 
     def init_state(self, sequence_length):
         return (
-            torch.zeros(self.num_layers, sequence_length, self.lstm_size * 8),
-            torch.zeros(self.num_layers, sequence_length, self.lstm_size * 8),
+            torch.zeros(self.num_layers, sequence_length, self.lstm_size * 16),
+            torch.zeros(self.num_layers, sequence_length, self.lstm_size * 16),
         )

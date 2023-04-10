@@ -65,7 +65,8 @@ model = Model(config).to(device)
 discriminator = Discriminator(config).to(device)
 model.train()
 
-momentum = 0.9
+momentum = 0.5
+momentum_d = 0.5
 criterion = nn.BCELoss(reduction="mean")
 lr_start_div_factor = 10
 optimizer = optim.Adam(
@@ -74,10 +75,10 @@ optimizer = optim.Adam(
 optimizer_d = optim.Adam(
     discriminator.parameters(),
     lr=config.max_lr / lr_start_div_factor,
-    betas=(momentum, 0.9),
+    betas=(momentum_d, 0.9),
 )
 total_steps = 10_000
-pct_start = 0.0004
+pct_start = 0.001
 scheduler = torch.optim.lr_scheduler.OneCycleLR(
     optimizer,
     max_lr=config.max_lr,
@@ -98,8 +99,8 @@ scheduler_d = torch.optim.lr_scheduler.OneCycleLR(
     pct_start=pct_start,
     three_phase=False,
     anneal_strategy="linear",
-    base_momentum=momentum,
-    max_momentum=momentum,
+    base_momentum=momentum_d,
+    max_momentum=momentum_d,
     final_div_factor=1e9,
 )
 
@@ -175,7 +176,6 @@ for epoch in range(args.max_epochs):
         loss_d_factor = 1.0 / max(disc_real_loss.item(), 1.0)
         loss_d_scaled = loss_d * loss_d_factor
         y = y.to(device)
-        y_pred = torch.divide(y_pred, torch.add(torch.max(y_pred), 1e-6))
         loss_r = vocab_size * criterion(y_pred, y)
         loss = loss_d_scaled + loss_r
 

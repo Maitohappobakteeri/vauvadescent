@@ -9,6 +9,14 @@ def weights_init(m):
         nn.init.xavier_normal_(m.weight.data, 1.0)
     elif classname.find("Linear") != -1:
         nn.init.xavier_normal_(m.weight.data, 1.0)
+    elif classname.find("LSTM") != -1:
+        for name, param in m.named_parameters():
+            if "weight_ih" in name:
+                torch.nn.init.xavier_uniform_(param.data, 0.1)
+            elif "weight_hh" in name:
+                torch.nn.init.xavier_uniform_(param.data, 0.1)
+            elif "bias" in name:
+                param.data.fill_(0)
 
 
 class Discriminator(nn.Module):
@@ -17,7 +25,7 @@ class Discriminator(nn.Module):
         self.config = config
         self.embedding_dim = 16
         self.lstm_size = 16
-        self.num_layers = 1
+        self.num_layers = 3
 
         self.embedding = nn.Embedding(vocab_size, self.embedding_dim)
 
@@ -28,8 +36,17 @@ class Discriminator(nn.Module):
         self.pre_lstm = nn.Sequential(
             nn.Linear(self.lstm_size * 16, self.lstm_size * 32),
             nn.LeakyReLU(0.2, inplace=True),
+            nn.Dropout(0.1),
             #
-            nn.Linear(self.lstm_size * 32, self.lstm_size * 16),
+            nn.Linear(self.lstm_size * 32, self.lstm_size * 64),
+            nn.LeakyReLU(0.2, inplace=True),
+            nn.Dropout(0.1),
+            #
+            nn.Linear(self.lstm_size * 64, self.lstm_size * 128),
+            nn.LeakyReLU(0.2, inplace=True),
+            nn.Dropout(0.1),
+            #
+            nn.Linear(self.lstm_size * 128, self.lstm_size * 16),
             nn.Tanh(),
         )
 
@@ -37,17 +54,19 @@ class Discriminator(nn.Module):
             input_size=self.lstm_size * 16,
             hidden_size=self.lstm_size * 16,
             num_layers=self.num_layers,
-            dropout=0.0,
+            dropout=0.1,
         )
 
         self.fc = nn.Sequential(
+            nn.Dropout(0.1),
+            #
             nn.Linear(self.lstm_size * 16, self.lstm_size * 32),
             nn.LeakyReLU(0.2, inplace=True),
-            nn.Dropout(0.01),
+            nn.Dropout(0.1),
             #
             nn.Linear(self.lstm_size * 32, self.lstm_size * 64),
             nn.LeakyReLU(0.2, inplace=True),
-            nn.Dropout(0.01),
+            nn.Dropout(0.2),
             #
             nn.Linear(self.lstm_size * 64, 1),
             nn.Sigmoid(),

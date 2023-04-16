@@ -65,8 +65,8 @@ model = Model(config).to(device)
 discriminator = Discriminator(config).to(device)
 model.train()
 
-momentum = 0.5
-momentum_d = 0.5
+momentum = 0.1
+momentum_d = 0.4
 criterion = nn.BCELoss(reduction="mean")
 lr_start_div_factor = 10
 optimizer = optim.Adam(
@@ -78,7 +78,7 @@ optimizer_d = optim.Adam(
     betas=(momentum_d, 0.9),
 )
 total_steps = 10_000
-pct_start = 0.001
+pct_start = 0.004
 scheduler = torch.optim.lr_scheduler.OneCycleLR(
     optimizer,
     max_lr=config.max_lr,
@@ -178,6 +178,8 @@ for epoch in range(args.max_epochs):
         y = y.to(device)
         loss_r = vocab_size * criterion(y_pred, y)
         loss = loss_d_scaled + loss_r
+        # loss = loss_d_scaled if loss_r.item() < 10.0 else loss_r + loss_d_scaled
+        # loss = loss_d_scaled
 
         loss_history.append([loss.item(), 1])
         loss_history_real.append([loss_r.item(), 1])
@@ -192,7 +194,7 @@ for epoch in range(args.max_epochs):
             repeating_status=True,
             substep=True,
         )
-        epoch_losses.append(round(math.log10(loss.item()), 2))
+        epoch_losses.append(round(math.log10(loss.item() + 1e-6), 2))
     log(
         "",
         repeating_status=True,

@@ -1,6 +1,7 @@
 import torch
 from torch import nn
 from prepare_data import vocab_size
+from easy_lstm import EasyLSTM
 
 
 def weights_init(m):
@@ -47,12 +48,7 @@ class Discriminator(nn.Module):
             nn.Tanh(),
         )
 
-        self.lstm = nn.LSTM(
-            input_size=self.lstm_size * self.jx_lstm,
-            hidden_size=self.lstm_size * self.jx_lstm,
-            num_layers=self.num_layers,
-            dropout=0.2,
-        )
+        self.lstm = EasyLSTM(10)
 
         self.fc = nn.Sequential(
             nn.Linear(self.lstm_size * self.jx_lstm, self.lstm_size * 32),
@@ -106,11 +102,4 @@ class Discriminator(nn.Module):
         return self.fc(output), state
 
     def init_state(self, sequence_length):
-        return (
-            torch.zeros(
-                self.num_layers, sequence_length, self.lstm_size * self.jx_lstm
-            ),
-            torch.zeros(
-                self.num_layers, sequence_length, self.lstm_size * self.jx_lstm
-            ),
-        )
+        return self.lstm.init_state(sequence_length)

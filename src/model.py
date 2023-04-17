@@ -3,6 +3,7 @@ from torch import nn
 
 import log
 from prepare_data import vocab_size
+from easy_lstm import EasyLSTM
 
 
 def weights_init(m):
@@ -45,12 +46,7 @@ class Model(nn.Module):
             nn.Tanh(),
         )
 
-        self.lstm = nn.LSTM(
-            input_size=self.lstm_size * self.jx_lstm,
-            hidden_size=self.lstm_size * self.jx_lstm,
-            num_layers=self.num_layers,
-            dropout=0.2,
-        )
+        self.lstm = EasyLSTM(10)
 
         self.context_layer = nn.Sequential(
             nn.Conv1d(
@@ -110,11 +106,4 @@ class Model(nn.Module):
         return logits, state
 
     def init_state(self, sequence_length):
-        return (
-            torch.zeros(
-                self.num_layers, sequence_length, self.lstm_size * self.jx_lstm
-            ),
-            torch.zeros(
-                self.num_layers, sequence_length, self.lstm_size * self.jx_lstm
-            ),
-        )
+        return self.lstm.init_state(sequence_length)

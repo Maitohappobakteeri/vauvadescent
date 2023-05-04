@@ -35,7 +35,9 @@ class Dataset(torch.utils.data.Dataset):
         for topic_index in range(self.args.batch_size):
             topic = []
             training_topic = []
-            topic_data = common.load_json_file(self.topics[topic_index])
+            topic_data = common.load_json_file(
+                self.topics[topic_index % len(self.topics)]
+            )
 
             start_index = random.randrange(
                 0, len(topic_data) - self.config.max_length_of_topic

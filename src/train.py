@@ -65,8 +65,8 @@ model = Model(config).to(device)
 discriminator = Discriminator(config).to(device)
 model.train()
 
-momentum = 0.1
-momentum_d = 0.4
+momentum = 0.4
+momentum_d = 0.9
 criterion = nn.BCELoss(reduction="mean")
 lr_start_div_factor = 10
 optimizer = optim.Adam(
@@ -78,18 +78,18 @@ optimizer_d = optim.Adam(
     betas=(momentum_d, 0.9),
 )
 total_steps = 10_000
-pct_start = 0.004
+pct_start = 0.001
 scheduler = torch.optim.lr_scheduler.OneCycleLR(
     optimizer,
     max_lr=config.max_lr,
     div_factor=lr_start_div_factor,
     total_steps=total_steps,
     pct_start=pct_start,
-    three_phase=False,
+    three_phase=True,
     anneal_strategy="linear",
     base_momentum=momentum,
     max_momentum=momentum,
-    final_div_factor=1e9,
+    final_div_factor=1e6,
 )
 scheduler_d = torch.optim.lr_scheduler.OneCycleLR(
     optimizer_d,
@@ -97,11 +97,11 @@ scheduler_d = torch.optim.lr_scheduler.OneCycleLR(
     div_factor=lr_start_div_factor,
     total_steps=total_steps,
     pct_start=pct_start,
-    three_phase=False,
+    three_phase=True,
     anneal_strategy="linear",
     base_momentum=momentum_d,
     max_momentum=momentum_d,
-    final_div_factor=1e9,
+    final_div_factor=1e6,
 )
 
 if os.path.isfile("../trained_model"):
@@ -160,8 +160,11 @@ for epoch in range(args.max_epochs):
         y_pred, (_) = model((x.to(device), c.to(device)), (state_h, state_c))
         fake_labels = torch.zeros((y.shape[0], y.shape[1], 1))
         disc_fake, (_) = discriminator((y_pred, c), (d_state_h, d_state_c))
-        disc_fake_loss = criterion(disc_fake, fake_labels) * (
-            1.0 / max(disc_real_loss.item(), 1.0)
+        fake_factor = 0.3 / max(disc_real_loss.item(), 0.3)
+        disc_fake_loss = (
+            criterion(disc_fake, fake_labels)
+            * (1.0 / max(disc_real_loss.item(), 1.0))
+            * fake_factor
         )
         disc_fake_loss.backward()
         optimizer_d.step()
@@ -173,7 +176,7 @@ for epoch in range(args.max_epochs):
         disc_pred, (_) = discriminator((y_pred, c), (d_state_h, d_state_c))
         real_labes = torch.ones((y.shape[0], y.shape[1], 1))
         loss_d = criterion(disc_pred, real_labes)
-        loss_d_factor = 1.0 / max(disc_real_loss.item(), 1.0)
+        loss_d_factor = 0.5 / max(disc_real_loss.item(), 0.5)
         loss_d_scaled = loss_d * loss_d_factor
         y = y.to(device)
         loss_r = vocab_size * criterion(y_pred, y)

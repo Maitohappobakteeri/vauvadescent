@@ -26,8 +26,8 @@ class Discriminator(nn.Module):
         self.config = config
         self.embedding_dim = 16
         self.lstm_size = 16
-        self.num_layers = 2
-        self.jx_lstm = 8
+        self.num_layers = 12
+        self.jx_lstm = 16
 
         self.embedding = nn.Embedding(vocab_size, self.embedding_dim)
 
@@ -38,26 +38,31 @@ class Discriminator(nn.Module):
         self.pre_lstm = nn.Sequential(
             nn.Linear(self.lstm_size * 16, self.lstm_size * 32),
             nn.LeakyReLU(0.2, inplace=True),
-            nn.Dropout(0.2),
+            nn.Dropout(0.1),
             #
             nn.Linear(self.lstm_size * 32, self.lstm_size * 64),
             nn.LeakyReLU(0.2, inplace=True),
-            nn.Dropout(0.2),
+            nn.Dropout(0.1),
             #
             nn.Linear(self.lstm_size * 64, self.lstm_size * self.jx_lstm),
             nn.Tanh(),
         )
 
-        self.lstm = EasyLSTM(10)
+        self.lstm = nn.LSTM(
+            input_size=self.lstm_size * self.jx_lstm,
+            hidden_size=self.lstm_size * self.jx_lstm,
+            num_layers=self.num_layers,
+            dropout=0.3 / self.num_layers,
+        )
 
         self.fc = nn.Sequential(
             nn.Linear(self.lstm_size * self.jx_lstm, self.lstm_size * 32),
             nn.LeakyReLU(0.2, inplace=True),
-            nn.Dropout(0.2),
+            nn.Dropout(0.1),
             #
             nn.Linear(self.lstm_size * 32, self.lstm_size * 64),
             nn.LeakyReLU(0.2, inplace=True),
-            nn.Dropout(0.2),
+            nn.Dropout(0.1),
             #
             nn.Linear(self.lstm_size * 64, 1),
             nn.Sigmoid(),
@@ -102,4 +107,21 @@ class Discriminator(nn.Module):
         return self.fc(output), state
 
     def init_state(self, sequence_length):
-        return self.lstm.init_state(sequence_length)
+        return (
+            torch.full(
+                (
+                    self.num_layers,
+                    sequence_length,
+                    self.lstm_size * self.jx_lstm,
+                ),
+                1.0 / (self.lstm_size * self.jx_lstm),
+            ),
+            torch.full(
+                (
+                    self.num_layers,
+                    sequence_length,
+                    self.lstm_size * self.jx_lstm,
+                ),
+                1.0 / (self.lstm_size * self.jx_lstm),
+            ),
+        )

@@ -25,65 +25,67 @@ def weights_init(m):
 class Model(nn.Module):
     def __init__(self, config):
         super(Model, self).__init__()
-        self.embedding_dim = 16
+        self.embedding_dim = 256
         self.lstm_size = 16
-        self.num_layers = 12
+        self.num_layers = 2
 
         self.jx_lstm = 16
 
         self.embedding = nn.Embedding(vocab_size, self.embedding_dim)
 
         self.pre_lstm = nn.Sequential(
-            nn.Linear(self.lstm_size * 16, self.lstm_size * 32),
+            nn.Linear(self.embedding_dim * 2, self.lstm_size * 32),
             nn.ReLU(True),
-            nn.Dropout(0.1),
+            nn.LayerNorm(self.lstm_size * 32),
             #
             nn.Linear(self.lstm_size * 32, self.lstm_size * 64),
             nn.ReLU(True),
-            nn.Dropout(0.1),
+            nn.LayerNorm(self.lstm_size * 64),
             #
             nn.Linear(self.lstm_size * 64, self.lstm_size * self.jx_lstm),
             nn.Tanh(),
         )
 
-        self.lstm = nn.LSTM(
-            input_size=self.lstm_size * self.jx_lstm,
-            hidden_size=self.lstm_size * self.jx_lstm,
-            num_layers=self.num_layers,
-            dropout=0.3 / self.num_layers,
-        )
+        # self.lstm = nn.LSTM(
+        #     input_size=self.lstm_size * self.jx_lstm,
+        #     hidden_size=self.lstm_size * self.jx_lstm,
+        #     num_layers=self.num_layers,
+        #     dropout=0.0,
+        # )
+
+        self.lstm = EasyLSTM(4, False)
 
         self.context_layer = nn.Sequential(
             nn.Conv1d(
-                config.context_length, self.lstm_size * 4, 8, stride=2, padding=2
+                config.context_length, self.lstm_size * 2, 8, stride=2, padding=2
             ),
+            nn.ReLU(True),
+            nn.BatchNorm1d(self.lstm_size * 2),
+            #
+            nn.Conv1d(self.lstm_size * 2, self.lstm_size * 4, 8, stride=2, padding=2),
             nn.ReLU(True),
             nn.BatchNorm1d(self.lstm_size * 4),
             #
-            nn.Conv1d(self.lstm_size * 4, self.lstm_size * 6, 8, stride=2, padding=2),
-            nn.ReLU(True),
-            nn.BatchNorm1d(self.lstm_size * 6),
-            #
-            nn.Conv1d(self.lstm_size * 6, self.lstm_size * 8, 1),
+            nn.Conv1d(self.lstm_size * 4, self.lstm_size * 8, 8, stride=2, padding=2),
             nn.ReLU(True),
             nn.BatchNorm1d(self.lstm_size * 8),
             #
-            nn.Conv1d(self.lstm_size * 8, self.lstm_size * 16, 1),
+            nn.Conv1d(self.lstm_size * 8, self.lstm_size * 16, 8, stride=2, padding=2),
             nn.ReLU(True),
             nn.BatchNorm1d(self.lstm_size * 16),
             #
-            nn.Conv1d(self.lstm_size * 16, self.lstm_size * 15, 2),
+            nn.Conv1d(self.lstm_size * 16, self.embedding_dim, 14),
             nn.Tanh(),
         )
 
         self.fc = nn.Sequential(
-            nn.Linear(self.lstm_size * self.jx_lstm, self.lstm_size * 32),
+            nn.Linear(self.lstm_size * self.jx_lstm * 2, self.lstm_size * 32),
             nn.ReLU(True),
-            nn.Dropout(0.1),
+            nn.LayerNorm(self.lstm_size * 32),
             #
             nn.Linear(self.lstm_size * 32, self.lstm_size * 64),
             nn.ReLU(True),
-            nn.Dropout(0.1),
+            nn.LayerNorm(self.lstm_size * 64),
             #
             nn.Linear(self.lstm_size * 64, vocab_size),
             nn.Sigmoid(),
@@ -100,32 +102,15 @@ class Model(nn.Module):
         c = self.embedding(c)
         c = self.context_layer(c)
         c = torch.flatten(c)
-        c = torch.unflatten(c, 0, (-1, x.shape[1], self.lstm_size * 15))
+        c = torch.unflatten(c, 0, (-1, x.shape[1], self.embedding_dim))
 
         s = torch.cat((e, c), dim=2)
         s = self.pre_lstm(s)
         output, state = self.lstm(s, prev_state)
-        logits = self.fc(output)
+        logits = self.fc(torch.cat((s, output), dim=2))
         logits = torch.divide(logits, torch.add(torch.max(logits), 1e-6))
 
         return logits, state
 
     def init_state(self, sequence_length):
-        return (
-            torch.full(
-                (
-                    self.num_layers,
-                    sequence_length,
-                    self.lstm_size * self.jx_lstm,
-                ),
-                1.0 / (self.lstm_size * self.jx_lstm),
-            ),
-            torch.full(
-                (
-                    self.num_layers,
-                    sequence_length,
-                    self.lstm_size * self.jx_lstm,
-                ),
-                1.0 / (self.lstm_size * self.jx_lstm),
-            ),
-        )
+        return self.lstm.init_state(sequence_length)

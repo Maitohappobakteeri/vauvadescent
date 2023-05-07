@@ -25,12 +25,11 @@ class EasyLSTM(nn.Module):
     def __init__(self, num_layers, discriminator=False):
         super(EasyLSTM, self).__init__()
         self.lstm_size = 16
-        self.num_layers = 1
+        self.num_layers = 2
         self.num_layers_group = num_layers
-        self.dropout = 0.2
-        self.jx_lstm = 8
+        self.jx_lstm = 16
 
-        self.lstm_layers = []
+        self.lstm_layers = nn.ModuleList()
         for i in range(num_layers):
             self.lstm_layers.append(
                 nn.LSTM(
@@ -41,44 +40,21 @@ class EasyLSTM(nn.Module):
                 )
             )
 
-        self.inbetween_layers = []
-        self.leak_layers = []
-        for i in range(num_layers - 1):
-            self.inbetween_layers.append(
+        self.leak_layers = nn.ModuleList()
+        for i in range(num_layers):
+            self.leak_layers.append(
                 nn.Sequential(
                     nn.Linear(
-                        self.lstm_size * self.jx_lstm, self.lstm_size * self.jx_lstm * 2
+                        self.lstm_size * self.jx_lstm * 2, self.lstm_size * self.jx_lstm
                     ),
+
                     nn.ReLU(True)
                     if not discriminator
                     else nn.LeakyReLU(0.2, inplace=True),
-                    nn.Dropout(self.dropout),
-                    nn.Linear(
-                        self.lstm_size * self.jx_lstm * 2,
-                        self.lstm_size * self.jx_lstm * 4,
-                    ),
-                    nn.ReLU(True)
-                    if not discriminator
-                    else nn.LeakyReLU(0.2, inplace=True),
-                    nn.Dropout(self.dropout),
-                    nn.Linear(
-                        self.lstm_size * self.jx_lstm * 4, self.lstm_size * self.jx_lstm
-                    ),
-                    nn.Tanh(),
-                    nn.Dropout(self.dropout),
+
+                    nn.LayerNorm(self.lstm_size * self.jx_lstm)
                 )
             )
-
-            self.leak_layers.append(
-                nn.Linear(
-                    self.lstm_size * self.jx_lstm * 2, self.lstm_size * self.jx_lstm
-                )
-            )
-
-        self.original_dropout = nn.Dropout(0.5)
-        self.mix_layer = nn.Linear(
-            self.lstm_size * self.jx_lstm * 2, self.lstm_size * self.jx_lstm
-        )
 
         self.apply(weights_init)
 
@@ -86,33 +62,35 @@ class EasyLSTM(nn.Module):
         state_h, state_c = prev_state
         state_h = state_h.split(self.num_layers)
         state_c = state_c.split(self.num_layers)
-
-        new_state = []
-        inputs_og = self.original_dropout(inputs)
+        new_state1 = []
+        new_state2 = []
         for i in range(self.num_layers_group):
-            if i > 0:
-                inputs = self.inbetween_layers[i - 1](inputs)
-                inputs_og = self.mix_layer(torch.cat((inputs, inputs_og), dim=2))
-            inputs, state = self.lstm_layers[i](inputs, (state_h[i], state_c[i]))
-            new_state.append(state)
-
-        inputs = self.mix_layer(torch.cat((inputs, inputs_og), dim=2))
+            new_inputs, state = self.lstm_layers[i](inputs, (state_h[i], state_c[i]))
+            inputs = self.leak_layers[i](torch.cat((inputs, new_inputs), dim=2))
+            new_state1.append(state[0])
+            new_state2.append(state[1])
 
         return inputs, (
-            torch.cat([state[0] for state in new_state]),
-            torch.cat([state[1] for state in new_state]),
+            torch.cat([state for state in new_state1]),
+            torch.cat([state for state in new_state2]),
         )
 
     def init_state(self, sequence_length):
         return (
-            torch.zeros(
-                self.num_layers_group * self.num_layers,
-                sequence_length,
-                self.lstm_size * self.jx_lstm,
+            torch.full(
+                (
+                    self.num_layers_group * self.num_layers,
+                    sequence_length,
+                    self.lstm_size * self.jx_lstm,
+                ),
+                1.0 / (self.lstm_size * self.jx_lstm),
             ),
-            torch.zeros(
-                self.num_layers_group * self.num_layers,
-                sequence_length,
-                self.lstm_size * self.jx_lstm,
+            torch.full(
+                (
+                    self.num_layers_group * self.num_layers,
+                    sequence_length,
+                    self.lstm_size * self.jx_lstm,
+                ),
+                1.0 / (self.lstm_size * self.jx_lstm),
             ),
         )

@@ -32,8 +32,7 @@ class Discriminator(nn.Module):
         self.embedding = nn.Embedding(vocab_size, self.embedding_dim)
 
         self.preparation_layer = nn.Sequential(
-            nn.Linear(vocab_size, self.embedding_dim), 
-            nn.Tanh()
+            nn.Linear(vocab_size, self.embedding_dim), nn.Tanh()
         )
 
         self.pre_lstm = nn.Sequential(
@@ -57,6 +56,8 @@ class Discriminator(nn.Module):
         # )
 
         self.lstm = EasyLSTM(4, True)
+
+        self.attention = nn.MultiheadAttention(self.embedding_dim, 4)
 
         self.fc = nn.Sequential(
             nn.Linear(self.lstm_size * self.jx_lstm * 2, self.lstm_size * 32),
@@ -100,6 +101,7 @@ class Discriminator(nn.Module):
         input, context = inputs
         c = torch.flatten(context, end_dim=1)
         c = self.embedding(c)
+        (c, _) = self.attention(c, c, c, need_weights=False)
         c = self.context_layer(c)
         c = torch.flatten(c)
         c = torch.unflatten(c, 0, (-1, input.shape[1], self.embedding_dim))

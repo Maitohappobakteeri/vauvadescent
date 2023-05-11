@@ -55,6 +55,8 @@ class Model(nn.Module):
 
         self.lstm = EasyLSTM(4, False)
 
+        self.attention = nn.MultiheadAttention(self.embedding_dim, 4)
+
         self.context_layer = nn.Sequential(
             nn.Conv1d(
                 config.context_length, self.lstm_size * 2, 8, stride=2, padding=2
@@ -100,6 +102,7 @@ class Model(nn.Module):
 
         c = torch.flatten(c, end_dim=1)
         c = self.embedding(c)
+        (c, _) = self.attention(c, c, c, need_weights=False)
         c = self.context_layer(c)
         c = torch.flatten(c)
         c = torch.unflatten(c, 0, (-1, x.shape[1], self.embedding_dim))

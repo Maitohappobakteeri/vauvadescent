@@ -32,7 +32,7 @@ import numpy as np
 import math
 import json
 
-device = "cuda"
+device = "cpu"
 
 important("VAUVADESCENT")
 important("Parsing args")
@@ -108,12 +108,12 @@ scheduler_d = torch.optim.lr_scheduler.OneCycleLR(
 reset_optimizer = False
 if os.path.isfile("../trained_model"):
     trained_model = torch.load("../trained_model", map_location=torch.device(device))
-    
+
     model.load_state_dict(trained_model["model"])
     if not reset_optimizer:
         optimizer.load_state_dict(trained_model["model_optimizer"])
         scheduler.load_state_dict(trained_model["model_scheduler"])
-    
+
     discriminator.load_state_dict(trained_model["discriminator"])
     if not reset_optimizer:
         optimizer_d.load_state_dict(trained_model["discriminator_optimizer"])
@@ -175,17 +175,14 @@ for epoch in range(args.max_epochs):
         disc_fake, (_) = discriminator((y_pred, c), (d_state_h, d_state_c))
         fake_factor = 0.3 / max(disc_real_loss.item(), 0.3)
         # fake_factor = 1.0
-        disc_fake_loss = (
-            criterion(disc_fake, fake_labels)
-            * (1.0 / max(disc_real_loss.item(), 1.0))
+        disc_fake_loss = criterion(disc_fake, fake_labels) * (
+            1.0 / max(disc_real_loss.item(), 1.0)
         )
-        ((disc_fake_loss * fake_factor)  / loss_div).backward()
+        ((disc_fake_loss * fake_factor) / loss_div).backward()
         optimizer_d.step()
 
         optimizer.zero_grad()
-        y_pred, (state_h, state_c) = model(
-            (x, c), (state_h, state_c)
-        )
+        y_pred, (state_h, state_c) = model((x, c), (state_h, state_c))
         disc_pred, (_) = discriminator((y_pred, c), (d_state_h, d_state_c))
         real_labes = torch.ones((y.shape[0], y.shape[1], 1)).to(device)
         loss_d = criterion(disc_pred, real_labes)
@@ -202,7 +199,7 @@ for epoch in range(args.max_epochs):
 
         state_h = state_h.detach()
         state_c = state_c.detach()
-        (loss  / loss_div).backward()
+        (loss / loss_div).backward()
         optimizer.step()
         log(
             f"{epoch}:{batch} - loss: {round(loss.item(), 2)} ({round(loss.item() - loss_d_scaled.item(), 2)} + {round(loss_d_scaled.item(), 2)}) - loss real: {round(disc_real_loss.item(), 2)}, - loss fake: {round(disc_fake_loss.item(), 2)}, lr: {round(math.log10(scheduler.get_last_lr()[-1]), 3)}",

@@ -86,7 +86,7 @@ def predict(
         device
     )
     model.eval()
-    state_h, state_c = model.init_state(input[0].shape[1])
+    state_h, state_c = model.init_state(1)
 
     max_character_amount = max_predict_chars
     min_character_amount = max_predict_chars - 200

@@ -4,6 +4,7 @@ from torch import nn
 import log
 from prepare_data import vocab_size
 from easy_lstm import EasyLSTM
+from database_memory import DatabaseMemory
 
 
 def weights_init(m):
@@ -53,9 +54,11 @@ class Model(nn.Module):
         #     dropout=0.0,
         # )
 
-        self.lstm = EasyLSTM(4, False)
+        self.db_memory = DatabaseMemory(config, self.embedding_dim, 1, use_short=True)
+        self.db_memory2 = DatabaseMemory(config, self.embedding_dim, 3)
+        # self.lstm = EasyLSTM(config, 4, False)
 
-        self.attention = nn.MultiheadAttention(self.embedding_dim, 4)
+        self.attention = nn.MultiheadAttention(self.embedding_dim, 4, batch_first=True)
 
         self.context_layer = nn.Sequential(
             nn.Conv1d(
@@ -104,16 +107,26 @@ class Model(nn.Module):
         c = self.embedding(c)
         (c, _) = self.attention(c, c, c, need_weights=False)
         c = self.context_layer(c)
+        
+        c = c.reshape((x.shape[0], -1, self.embedding_dim))
+        c = torch.split(c, 1, dim=1)
+        c_list = []
+        for cc in c:
+            memory_output = self.db_memory(cc.reshape((-1, self.embedding_dim))).reshape((x.shape[0], 1, self.embedding_dim))
+            c_list.append(self.db_memory2(memory_output))
+        c = torch.cat(c_list, dim=1)
+
         c = torch.flatten(c)
         c = torch.unflatten(c, 0, (-1, x.shape[1], self.embedding_dim))
 
         s = torch.cat((e, c), dim=2)
         s = self.pre_lstm(s)
-        output, state = self.lstm(s, prev_state)
-        logits = self.fc(torch.cat((s, output), dim=2))
+        # output, state = self.lstm(s, prev_state)
+        logits = self.fc(torch.cat((s, s), dim=2))
         logits = torch.divide(logits, torch.add(torch.max(logits), 1e-6))
 
-        return logits, state
+        return logits, prev_state
 
     def init_state(self, sequence_length):
-        return self.lstm.init_state(sequence_length)
+        # return self.lstm.init_state(sequence_length)
+        return torch.zeros((1,1,1)), torch.zeros((1,1,1))

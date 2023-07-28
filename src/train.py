@@ -11,6 +11,7 @@ from dataset import Dataset
 from model import Model
 from discriminator import Discriminator
 from config import Configuration
+from database_memory import update as update_memory
 import common
 from prepare_data import (
     SpecialCharacters,
@@ -32,7 +33,7 @@ import numpy as np
 import math
 import json
 
-device = "cpu"
+device = "cuda"
 
 important("VAUVADESCENT")
 important("Parsing args")
@@ -110,14 +111,14 @@ if os.path.isfile("../trained_model"):
     trained_model = torch.load("../trained_model", map_location=torch.device(device))
 
     model.load_state_dict(trained_model["model"])
-    if not reset_optimizer:
-        optimizer.load_state_dict(trained_model["model_optimizer"])
-        scheduler.load_state_dict(trained_model["model_scheduler"])
+    # if not reset_optimizer:
+    #     optimizer.load_state_dict(trained_model["model_optimizer"])
+    #     scheduler.load_state_dict(trained_model["model_scheduler"])
 
     discriminator.load_state_dict(trained_model["discriminator"])
-    if not reset_optimizer:
-        optimizer_d.load_state_dict(trained_model["discriminator_optimizer"])
-        scheduler_d.load_state_dict(trained_model["discriminator_scheduler"])
+    # if not reset_optimizer:
+    #     optimizer_d.load_state_dict(trained_model["discriminator_optimizer"])
+    #     scheduler_d.load_state_dict(trained_model["discriminator_scheduler"])
 
 
 def pack_loss_history(loss_history):
@@ -145,9 +146,9 @@ loss_history_discriminator = state["loss_history_discriminator"]
 set_status_state(ProgressStatus(args.max_epochs))
 for epoch in range(args.max_epochs):
     dataset.load_batches()
-    state_h, state_c = model.init_state(config.sequence_length)
+    state_h, state_c = model.init_state(config.batch_size)
     state_h, state_c = state_h.to(device), state_c.to(device)
-    d_state_h, d_state_c = discriminator.init_state(config.sequence_length)
+    d_state_h, d_state_c = discriminator.init_state(config.batch_size)
     d_state_h, d_state_c = d_state_h.to(device), d_state_c.to(device)
 
     epoch_losses = []
@@ -187,8 +188,8 @@ for epoch in range(args.max_epochs):
         real_labes = torch.ones((y.shape[0], y.shape[1], 1)).to(device)
         loss_d = criterion(disc_pred, real_labes)
         loss_d_factor = 0.5 / max(disc_real_loss.item(), 0.5)
-        loss_d_scaled = loss_d * loss_d_factor
         loss_r = vocab_size * criterion(y_pred, y)
+        loss_d_scaled = loss_d * loss_d_factor * loss_r * 0.1
         loss = loss_d_scaled + loss_r
         # loss = loss_d_scaled if loss_r.item() < 10.0 else loss_r + loss_d_scaled
         # loss = loss_d_scaled
@@ -207,6 +208,7 @@ for epoch in range(args.max_epochs):
             substep=True,
         )
         epoch_losses.append(round(math.log10(loss.item() + 1e-6), 2))
+    update_memory()
     log(
         "",
         repeating_status=True,
@@ -229,11 +231,11 @@ for epoch in range(args.max_epochs):
 
 trained_model = {
     "model": model.state_dict(),
-    "model_optimizer": optimizer.state_dict(),
-    "model_scheduler": scheduler.state_dict(),
+    # "model_optimizer": optimizer.state_dict(),
+    # "model_scheduler": scheduler.state_dict(),
     "discriminator": discriminator.state_dict(),
-    "discriminator_optimizer": optimizer_d.state_dict(),
-    "discriminator_scheduler": scheduler_d.state_dict(),
+    # "discriminator_optimizer": optimizer_d.state_dict(),
+    # "discriminator_scheduler": scheduler_d.state_dict(),
 }
 torch.save(trained_model, "../trained_model")
 plot_simple_array(
@@ -244,5 +246,6 @@ plot_simple_array(
     ],
     "../loss_history.png",
 )
+model.db_memory.save_db()
 log(predict(model, device, config, input_text), multiline=True, type=LogTypes.DATA)
-important("Done"),
+important("Done")

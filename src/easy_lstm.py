@@ -22,8 +22,9 @@ def weights_init(m):
 
 
 class EasyLSTM(nn.Module):
-    def __init__(self, num_layers, discriminator=False):
+    def __init__(self, config, num_layers, discriminator=False):
         super(EasyLSTM, self).__init__()
+        self.config = config
         self.lstm_size = 16
         self.num_layers = 2
         self.num_layers_group = num_layers
@@ -37,6 +38,7 @@ class EasyLSTM(nn.Module):
                     hidden_size=self.lstm_size * self.jx_lstm,
                     num_layers=self.num_layers,
                     dropout=0.0,
+                    batch_first=True
                 )
             )
 

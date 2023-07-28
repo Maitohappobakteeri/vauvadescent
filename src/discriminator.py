@@ -55,9 +55,9 @@ class Discriminator(nn.Module):
         #     dropout=0.0,
         # )
 
-        self.lstm = EasyLSTM(4, True)
+        self.lstm = EasyLSTM(self.config, 4, True)
 
-        self.attention = nn.MultiheadAttention(self.embedding_dim, 4)
+        self.attention = nn.MultiheadAttention(self.embedding_dim, 4, batch_first=True)
 
         self.fc = nn.Sequential(
             nn.Linear(self.lstm_size * self.jx_lstm * 2, self.lstm_size * 32),

@@ -23,7 +23,7 @@ class Dataset(torch.utils.data.Dataset):
         self.step_length = self.args.sequence_length
         self.character_labels = np.array(
             [
-                [1 if n == i else 1e-6 for n in range(vocab_size)]
+                [1 if n == i else 0 for n in range(vocab_size)]
                 for i in range(vocab_size)
             ],
             np.float32,

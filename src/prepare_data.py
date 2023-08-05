@@ -16,8 +16,8 @@ import os
 from enum import Enum
 
 vowels = [c for c in "aeiouyåäö".upper()] + [c for c in "aeiouyåäö"]
-vocab_size = 1_500
-word_amount = 500
+vocab_size = 2000
+word_amount = 1000
 min_word_length = 4
 max_syllable_length = 2
 

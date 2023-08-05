@@ -42,13 +42,13 @@ def predict(
 
     def logits_to_index(t):
         arr = t.detach().cpu().numpy()
-        arr = arr - np.min(arr)
-        arr = np.power(arr, 1.0 / randomess)
-        normalized = np.divide(arr, np.sum(arr))
-        for i, n in enumerate(normalized):
-            normalized[i] = n if not math.isnan(n) else 0.01
-        normalized = np.divide(normalized, np.sum(normalized))
-        return np.random.choice([i for i in range(vocab_size)], p=normalized)
+        # arr = arr - np.min(arr)
+        # arr = np.power(arr, 1.0 / randomess)
+        # normalized = np.divide(arr, np.sum(arr))
+        # for i, n in enumerate(normalized):
+        #     normalized[i] = n if not math.isnan(n) else 0.0001
+        # normalized = np.divide(normalized, np.sum(normalized))
+        return np.random.choice([i for i in range(vocab_size)], p=arr)
 
     def is_new_post(i):
         return index_to_char.get(str(i), "#") == SpecialCharacters.NEW_POST.value

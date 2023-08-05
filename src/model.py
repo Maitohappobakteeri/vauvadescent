@@ -30,22 +30,9 @@ class Model(nn.Module):
         self.lstm_size = 16
         self.num_layers = 2
 
-        self.jx_lstm = 16
+        self.jx_lstm = 32
 
         self.embedding = nn.Embedding(vocab_size, self.embedding_dim)
-
-        self.pre_lstm = nn.Sequential(
-            nn.Linear(self.embedding_dim * 2, self.lstm_size * 32),
-            nn.ReLU(True),
-            nn.LayerNorm(self.lstm_size * 32),
-            #
-            nn.Linear(self.lstm_size * 32, self.lstm_size * 64),
-            nn.ReLU(True),
-            nn.LayerNorm(self.lstm_size * 64),
-            #
-            nn.Linear(self.lstm_size * 64, self.lstm_size * self.jx_lstm),
-            nn.Tanh(),
-        )
 
         # self.lstm = nn.LSTM(
         #     input_size=self.lstm_size * self.jx_lstm,
@@ -54,46 +41,36 @@ class Model(nn.Module):
         #     dropout=0.0,
         # )
 
-        self.db_memory = DatabaseMemory(config, self.embedding_dim, 1, use_short=True)
-        self.db_memory2 = DatabaseMemory(config, self.embedding_dim, 3)
+        self.db_memory = DatabaseMemory(config, self.lstm_size * 32, 1, use_short=True)
         # self.lstm = EasyLSTM(config, 4, False)
-
-        self.attention = nn.MultiheadAttention(self.embedding_dim, 4, batch_first=True)
 
         self.context_layer = nn.Sequential(
             nn.Conv1d(
                 config.context_length, self.lstm_size * 2, 8, stride=2, padding=2
             ),
-            nn.ReLU(True),
+            nn.LeakyReLU(0.1, inplace=True),
             nn.BatchNorm1d(self.lstm_size * 2),
             #
             nn.Conv1d(self.lstm_size * 2, self.lstm_size * 4, 8, stride=2, padding=2),
-            nn.ReLU(True),
+            nn.LeakyReLU(0.1, inplace=True),
             nn.BatchNorm1d(self.lstm_size * 4),
             #
             nn.Conv1d(self.lstm_size * 4, self.lstm_size * 8, 8, stride=2, padding=2),
-            nn.ReLU(True),
+            nn.LeakyReLU(0.1, inplace=True),
             nn.BatchNorm1d(self.lstm_size * 8),
             #
             nn.Conv1d(self.lstm_size * 8, self.lstm_size * 16, 8, stride=2, padding=2),
-            nn.ReLU(True),
+            nn.LeakyReLU(0.1, inplace=True),
             nn.BatchNorm1d(self.lstm_size * 16),
             #
-            nn.Conv1d(self.lstm_size * 16, self.embedding_dim, 14),
-            nn.Tanh(),
+            nn.Conv1d(self.lstm_size * 16, self.lstm_size * 32, 14),
+            nn.LeakyReLU(0.1, inplace=True),
+            nn.BatchNorm1d(self.lstm_size * 32),
+            # nn.Tanh(),
         )
 
         self.fc = nn.Sequential(
-            nn.Linear(self.lstm_size * self.jx_lstm * 2, self.lstm_size * 32),
-            nn.ReLU(True),
-            nn.LayerNorm(self.lstm_size * 32),
-            #
-            nn.Linear(self.lstm_size * 32, self.lstm_size * 64),
-            nn.ReLU(True),
-            nn.LayerNorm(self.lstm_size * 64),
-            #
-            nn.Linear(self.lstm_size * 64, vocab_size),
-            nn.Sigmoid(),
+            nn.Linear(self.lstm_size * 64 + self.embedding_dim, vocab_size),
         )
 
         self.apply(weights_init)
@@ -105,25 +82,22 @@ class Model(nn.Module):
 
         c = torch.flatten(c, end_dim=1)
         c = self.embedding(c)
-        (c, _) = self.attention(c, c, c, need_weights=False)
         c = self.context_layer(c)
         
-        c = c.reshape((x.shape[0], -1, self.embedding_dim))
-        c = torch.split(c, 1, dim=1)
+        c = c.reshape((x.shape[0], -1, self.lstm_size * 32))
+        m_output = c
+        m_output = torch.split(m_output, 1, dim=1)
         c_list = []
-        for cc in c:
-            memory_output = self.db_memory(cc.reshape((-1, self.embedding_dim))).reshape((x.shape[0], 1, self.embedding_dim))
-            c_list.append(self.db_memory2(memory_output))
-        c = torch.cat(c_list, dim=1)
+        for cc in m_output:
+            cc = cc.reshape((-1, self.lstm_size * 32))
+            memory_output = self.db_memory(cc)
+            c_list.append(memory_output.reshape((x.shape[0], 1, self.lstm_size * 32)))
+        m_output = torch.cat(c_list, dim=1)
 
-        c = torch.flatten(c)
-        c = torch.unflatten(c, 0, (-1, x.shape[1], self.embedding_dim))
-
-        s = torch.cat((e, c), dim=2)
-        s = self.pre_lstm(s)
-        # output, state = self.lstm(s, prev_state)
-        logits = self.fc(torch.cat((s, s), dim=2))
-        logits = torch.divide(logits, torch.add(torch.max(logits), 1e-6))
+        c = c.view((-1, x.shape[1], self.lstm_size * 32))
+        s = torch.cat((e, c, m_output), dim=2)
+        logits = nn.functional.softmax(self.fc(s), dim=2)
+        # logits = torch.divide(logits, torch.add(torch.max(logits), 1e-11))
 
         return logits, prev_state
 

@@ -41,7 +41,7 @@ important("Parsing args")
 parser = argparse.ArgumentParser()
 parser.add_argument("--max-epochs", type=int, default=50)
 parser.add_argument("--batch-size", type=int, default=8)
-parser.add_argument("--max-lr", type=float, default=0.001)
+parser.add_argument("--max-lr", type=float, default=0.01)
 
 args = parser.parse_args()
 log(pretty_format(args.__dict__))
@@ -66,8 +66,8 @@ model = Model(config).to(device)
 discriminator = Discriminator(config).to(device)
 model.train()
 
-momentum = 0.4
-momentum_max = 0.4
+momentum = 0.9
+momentum_max = 0.9
 momentum_d = 0.9
 criterion = nn.BCELoss(reduction="mean")
 lr_start_div_factor = 3
@@ -91,7 +91,7 @@ scheduler = torch.optim.lr_scheduler.OneCycleLR(
     anneal_strategy="linear",
     base_momentum=momentum,
     max_momentum=momentum_max,
-    final_div_factor=1e1,
+    final_div_factor=1e1000,
 )
 scheduler_d = torch.optim.lr_scheduler.OneCycleLR(
     optimizer_d,
@@ -111,11 +111,11 @@ if os.path.isfile("../trained_model"):
     trained_model = torch.load("../trained_model", map_location=torch.device(device))
 
     model.load_state_dict(trained_model["model"])
-    # if not reset_optimizer:
-    #     optimizer.load_state_dict(trained_model["model_optimizer"])
-    #     scheduler.load_state_dict(trained_model["model_scheduler"])
+    if not reset_optimizer:
+        optimizer.load_state_dict(trained_model["model_optimizer"])
+        scheduler.load_state_dict(trained_model["model_scheduler"])
 
-    discriminator.load_state_dict(trained_model["discriminator"])
+    # discriminator.load_state_dict(trained_model["discriminator"])
     # if not reset_optimizer:
     #     optimizer_d.load_state_dict(trained_model["discriminator_optimizer"])
     #     scheduler_d.load_state_dict(trained_model["discriminator_scheduler"])
@@ -148,8 +148,8 @@ for epoch in range(args.max_epochs):
     dataset.load_batches()
     state_h, state_c = model.init_state(config.batch_size)
     state_h, state_c = state_h.to(device), state_c.to(device)
-    d_state_h, d_state_c = discriminator.init_state(config.batch_size)
-    d_state_h, d_state_c = d_state_h.to(device), d_state_c.to(device)
+    # d_state_h, d_state_c = discriminator.init_state(config.batch_size)
+    # d_state_h, d_state_c = d_state_h.to(device), d_state_c.to(device)
 
     epoch_losses = []
 
@@ -160,50 +160,52 @@ for epoch in range(args.max_epochs):
         y = y.to(device)
         c = c.to(device)
 
-        optimizer_d.zero_grad()
-        disc_real, (d_state_h, d_state_c) = discriminator(
-            (y, c), (d_state_h, d_state_c)
-        )
-        real_labes = torch.ones((y.shape[0], y.shape[1], 1)).to(device)
-        disc_real_loss = criterion(disc_real, real_labes)
-        d_state_h = d_state_h.detach()
-        d_state_c = d_state_c.detach()
-        (disc_real_loss / loss_div).backward()
-        # optimizer_d.step()
         # optimizer_d.zero_grad()
-        y_pred, (_) = model((x, c), (state_h, state_c))
-        fake_labels = torch.zeros((y.shape[0], y.shape[1], 1)).to(device)
-        disc_fake, (_) = discriminator((y_pred, c), (d_state_h, d_state_c))
-        fake_factor = 0.3 / max(disc_real_loss.item(), 0.3)
-        # fake_factor = 1.0
-        disc_fake_loss = criterion(disc_fake, fake_labels) * (
-            1.0 / max(disc_real_loss.item(), 1.0)
-        )
-        ((disc_fake_loss * fake_factor) / loss_div).backward()
-        optimizer_d.step()
+        # disc_real, (d_state_h, d_state_c) = discriminator(
+        #     (y, c), (d_state_h, d_state_c)
+        # )
+        # real_labes = torch.ones((y.shape[0], y.shape[1], 1)).to(device)
+        # disc_real_loss = criterion(disc_real, real_labes)
+        # d_state_h = d_state_h.detach()
+        # d_state_c = d_state_c.detach()
+        # (disc_real_loss / loss_div).backward()
+        # # optimizer_d.step()
+        # # optimizer_d.zero_grad()
+        # y_pred, (_) = model((x, c), (state_h, state_c))
+        # fake_labels = torch.zeros((y.shape[0], y.shape[1], 1)).to(device)
+        # disc_fake, (_) = discriminator((y_pred, c), (d_state_h, d_state_c))
+        # fake_factor = 0.3 / max(disc_real_loss.item(), 0.3)
+        # # fake_factor = 1.0
+        # disc_fake_loss = criterion(disc_fake, fake_labels) * (
+        #     1.0 / max(disc_real_loss.item(), 1.0)
+        # )
+        # ((disc_fake_loss * fake_factor) / loss_div).backward()
+        # optimizer_d.step()
 
-        optimizer.zero_grad()
         y_pred, (state_h, state_c) = model((x, c), (state_h, state_c))
-        disc_pred, (_) = discriminator((y_pred, c), (d_state_h, d_state_c))
+        # disc_pred, (_) = discriminator((y_pred, c), (d_state_h, d_state_c))
         real_labes = torch.ones((y.shape[0], y.shape[1], 1)).to(device)
-        loss_d = criterion(disc_pred, real_labes)
-        loss_d_factor = 0.5 / max(disc_real_loss.item(), 0.5)
-        loss_r = vocab_size * criterion(y_pred, y)
-        loss_d_scaled = loss_d * loss_d_factor * loss_r * 0.1
-        loss = loss_d_scaled + loss_r
+        # loss_d = criterion(disc_pred, real_labes)
+        # loss_d_factor = 0.5 / max(disc_real_loss.item(), 0.5)
+        loss_r = criterion(y_pred, y)
+        # loss_d_scaled = loss_d * loss_d_factor * loss_r * 0.1
+        loss = loss_r # + loss_d_scaled
         # loss = loss_d_scaled if loss_r.item() < 10.0 else loss_r + loss_d_scaled
         # loss = loss_d_scaled
 
         loss_history.append([loss.item(), 1])
         loss_history_real.append([loss_r.item(), 1])
-        loss_history_discriminator.append([loss_d_scaled.item(), 1])
+        # loss_history_discriminator.append([loss_d_scaled.item(), 1])
 
         state_h = state_h.detach()
         state_c = state_c.detach()
         (loss / loss_div).backward()
-        optimizer.step()
+
+        if (batch % 4 == 0):
+            optimizer.step()
+            optimizer.zero_grad()
         log(
-            f"{epoch}:{batch} - loss: {round(loss.item(), 2)} ({round(loss.item() - loss_d_scaled.item(), 2)} + {round(loss_d_scaled.item(), 2)}) - loss real: {round(disc_real_loss.item(), 2)}, - loss fake: {round(disc_fake_loss.item(), 2)}, lr: {round(math.log10(scheduler.get_last_lr()[-1]), 3)}",
+            f"{epoch}:{batch} - loss: {round(math.log10(loss.item() + 1e-11), 2)}, lr: {round(math.log10(scheduler.get_last_lr()[-1]), 3)}",
             repeating_status=True,
             substep=True,
         )
@@ -214,7 +216,7 @@ for epoch in range(args.max_epochs):
         repeating_status=True,
     )
     state["lr_step"] += 1
-    scheduler_d.step()
+    # scheduler_d.step()
     scheduler.step()
     state["loss_history"] = loss_history
     state["loss_history_real"] = loss_history_real
@@ -231,18 +233,16 @@ for epoch in range(args.max_epochs):
 
 trained_model = {
     "model": model.state_dict(),
-    # "model_optimizer": optimizer.state_dict(),
-    # "model_scheduler": scheduler.state_dict(),
-    "discriminator": discriminator.state_dict(),
+    "model_optimizer": optimizer.state_dict(),
+    "model_scheduler": scheduler.state_dict(),
+    # "discriminator": discriminator.state_dict(),
     # "discriminator_optimizer": optimizer_d.state_dict(),
     # "discriminator_scheduler": scheduler_d.state_dict(),
 }
 torch.save(trained_model, "../trained_model")
 plot_simple_array(
     [
-        [round(math.log10(x[0] + 0.01), 2) for x in loss_history],
-        [round(math.log10(x[0] + 0.01), 2) for x in loss_history_real],
-        [round(math.log10(x[0] + 0.01), 2) for x in loss_history_discriminator],
+        [round(math.log10(x[0] + 1e-11), 2) for x in loss_history]
     ],
     "../loss_history.png",
 )

@@ -2,6 +2,7 @@ import argparse
 from log import (
     log,
     important,
+    warning,
     pretty_format,
     set_status_state,
     ProgressStatus,
@@ -11,7 +12,7 @@ from dataset import Dataset
 from model import Model
 from discriminator import Discriminator
 from config import Configuration
-from database_memory import update as update_memory
+# from database_memory import update as update_memory
 import common
 from prepare_data import (
     SpecialCharacters,
@@ -24,6 +25,7 @@ from plot import plot_simple_array
 from predict import predict
 
 import torch
+from torchvision.ops.focal_loss import sigmoid_focal_loss
 from torch import nn, optim
 from torch.utils.data import DataLoader
 from statistics import mean, median
@@ -33,6 +35,17 @@ import numpy as np
 import math
 import json
 
+def log10(n):
+    if n is None:
+        return float('NaN')
+    n = abs(n)
+    if n <= 0:
+        return float('NaN')
+    return math.log10(n)
+
+def round_log10(n):
+    return round(log10(n), 2)
+
 device = "cuda"
 
 important("VAUVADESCENT")
@@ -41,7 +54,7 @@ important("Parsing args")
 parser = argparse.ArgumentParser()
 parser.add_argument("--max-epochs", type=int, default=50)
 parser.add_argument("--batch-size", type=int, default=8)
-parser.add_argument("--max-lr", type=float, default=0.01)
+parser.add_argument("--max-lr", type=float, default=0.0001)
 
 args = parser.parse_args()
 log(pretty_format(args.__dict__))
@@ -66,13 +79,13 @@ model = Model(config).to(device)
 discriminator = Discriminator(config).to(device)
 model.train()
 
-momentum = 0.9
-momentum_max = 0.9
+momentum = 0.5
+momentum_max = 0.5
 momentum_d = 0.9
-criterion = nn.BCELoss(reduction="mean")
-lr_start_div_factor = 3
+criterion = nn.BCEWithLogitsLoss(reduction="mean")
+lr_start_div_factor = 10
 optimizer = optim.Adam(
-    model.parameters(), lr=config.max_lr / lr_start_div_factor, betas=(momentum, 0.9)
+    model.parameters(), lr=config.max_lr / lr_start_div_factor, betas=(momentum, 0.5)
 )
 optimizer_d = optim.Adam(
     discriminator.parameters(),
@@ -99,7 +112,7 @@ scheduler_d = torch.optim.lr_scheduler.OneCycleLR(
     div_factor=lr_start_div_factor,
     total_steps=total_steps,
     pct_start=pct_start,
-    three_phase=True,
+    three_phase=False,
     anneal_strategy="linear",
     base_momentum=momentum_d,
     max_momentum=momentum_d,
@@ -107,9 +120,12 @@ scheduler_d = torch.optim.lr_scheduler.OneCycleLR(
 )
 
 reset_optimizer = False
+previous_model_loss = None
 if os.path.isfile("../trained_model"):
     trained_model = torch.load("../trained_model", map_location=torch.device(device))
 
+    previous_model_loss = trained_model["model_loss"]
+    important(f"Previous model loss: {round(log10(previous_model_loss), 2)}") 
     model.load_state_dict(trained_model["model"])
     if not reset_optimizer:
         optimizer.load_state_dict(trained_model["model_optimizer"])
@@ -120,6 +136,7 @@ if os.path.isfile("../trained_model"):
     #     optimizer_d.load_state_dict(trained_model["discriminator_optimizer"])
     #     scheduler_d.load_state_dict(trained_model["discriminator_scheduler"])
 
+# print(model)
 
 def pack_loss_history(loss_history):
     new_list = []
@@ -144,7 +161,11 @@ loss_history = state["loss_history"]
 loss_history_real = state["loss_history_real"]
 loss_history_discriminator = state["loss_history_discriminator"]
 set_status_state(ProgressStatus(args.max_epochs))
+grad_mean = 0
+last_epoch_loss = []
+has_printed_grad = False
 for epoch in range(args.max_epochs):
+    # last_epoch_loss = last_epoch_loss[-100_000:]
     dataset.load_batches()
     state_h, state_c = model.init_state(config.batch_size)
     state_h, state_c = state_h.to(device), state_c.to(device)
@@ -152,6 +173,11 @@ for epoch in range(args.max_epochs):
     # d_state_h, d_state_c = d_state_h.to(device), d_state_c.to(device)
 
     epoch_losses = []
+    if epoch >= 10:
+        loss_diff = mean((last_epoch_loss)[-10_000:]) - (previous_model_loss or 999_999)
+        if loss_diff <= 0:
+            warning("Model is now better, stopping")
+            break
 
     set_substeps(len(dataloader))
     for batch, (x, c, y) in enumerate(dataloader):
@@ -160,6 +186,7 @@ for epoch in range(args.max_epochs):
         y = y.to(device)
         c = c.to(device)
 
+        optimizer.zero_grad()
         # optimizer_d.zero_grad()
         # disc_real, (d_state_h, d_state_c) = discriminator(
         #     (y, c), (d_state_h, d_state_c)
@@ -187,7 +214,11 @@ for epoch in range(args.max_epochs):
         real_labes = torch.ones((y.shape[0], y.shape[1], 1)).to(device)
         # loss_d = criterion(disc_pred, real_labes)
         # loss_d_factor = 0.5 / max(disc_real_loss.item(), 0.5)
+
+        # pos_weight CBELOSS tai tää
+        # loss_r = sigmoid_focal_loss(y_pred, y, reduction="mean")
         loss_r = criterion(y_pred, y)
+
         # loss_d_scaled = loss_d * loss_d_factor * loss_r * 0.1
         loss = loss_r # + loss_d_scaled
         # loss = loss_d_scaled if loss_r.item() < 10.0 else loss_r + loss_d_scaled
@@ -200,17 +231,27 @@ for epoch in range(args.max_epochs):
         state_h = state_h.detach()
         state_c = state_c.detach()
         (loss / loss_div).backward()
+        
+        # torch.nn.utils.clip_grad_norm_(model.parameters(), 0.25)
 
-        if (batch % 4 == 0):
-            optimizer.step()
-            optimizer.zero_grad()
+        # if ((batch + 1) % 4 == 0):
+        if not has_printed_grad and batch > 20:
+            has_printed_grad = True
+            for name, param in model.named_parameters():
+                log(f"{name}: {round_log10(torch.mean(torch.abs(param.grad)))}", LogTypes.WARNING)
+        optimizer.step()
+        
+        loss_diff1 = mean(([previous_model_loss or 999_999] + last_epoch_loss)[-10_000:])
+        loss_diff =  loss_diff1 - (previous_model_loss or 999_999)
+        isBetter = loss_diff < 0
         log(
-            f"{epoch}:{batch} - loss: {round(math.log10(loss.item() + 1e-11), 2)}, lr: {round(math.log10(scheduler.get_last_lr()[-1]), 3)}",
+            f"{epoch}:{batch} - loss: {round(log10(loss.item()), 2)}, lr: {round(log10(scheduler.get_last_lr()[-1]), 3)}, better: {isBetter} ({round(round_log10(loss_diff1) - round_log10(previous_model_loss), 2)})",
             repeating_status=True,
             substep=True,
         )
-        epoch_losses.append(round(math.log10(loss.item() + 1e-6), 2))
-    update_memory()
+        last_epoch_loss.append(loss.item())
+        epoch_losses.append(round(math.log10(loss.item() + 1e-11), 2))
+    # update_memory()
     log(
         "",
         repeating_status=True,
@@ -231,21 +272,29 @@ for epoch in range(args.max_epochs):
     # log(predict(model, input_text), multiline=True, type=LogTypes.DATA)
     model.train()
 
-trained_model = {
-    "model": model.state_dict(),
-    "model_optimizer": optimizer.state_dict(),
-    "model_scheduler": scheduler.state_dict(),
-    # "discriminator": discriminator.state_dict(),
-    # "discriminator_optimizer": optimizer_d.state_dict(),
-    # "discriminator_scheduler": scheduler_d.state_dict(),
-}
-torch.save(trained_model, "../trained_model")
+last_epoch_loss = mean(last_epoch_loss[-10_000:])
+
+if previous_model_loss is None or last_epoch_loss <= previous_model_loss:
+    important("Saving model")
+    trained_model = {
+        "model_loss": last_epoch_loss,
+
+        "model": model.state_dict(),
+        "model_optimizer": optimizer.state_dict(),
+        "model_scheduler": scheduler.state_dict(),
+        # "discriminator": discriminator.state_dict(),
+        # "discriminator_optimizer": optimizer_d.state_dict(),
+        # "discriminator_scheduler": scheduler_d.state_dict(),
+    }
+    torch.save(trained_model, "../trained_model")
+else:
+    warning(f"New model worse, skipping save {round_log10(previous_model_loss)} < {round_log10(last_epoch_loss)}")
 plot_simple_array(
     [
-        [round(math.log10(x[0] + 1e-11), 2) for x in loss_history]
+        [round(log10(x[0]), 2) for x in loss_history]
     ],
     "../loss_history.png",
 )
-model.db_memory.save_db()
+# model.db_memory.save_db()
 log(predict(model, device, config, input_text), multiline=True, type=LogTypes.DATA)
 important("Done")

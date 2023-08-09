@@ -19,7 +19,7 @@ input_text_list  = [
 ]
 
 predictions = [
-    predict(model, device, config, i, split_to_posts=True, max_predict_chars=1000, randomess=0.7)
+    predict(model, device, config, i, split_to_posts=True, max_predict_chars=1000)
     for i in input_text_list
 ]
 

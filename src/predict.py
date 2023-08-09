@@ -31,7 +31,7 @@ def predict(
     input_text,
     split_to_posts=False,
     max_predict_chars=400,
-    randomess=1.0,
+    temperature=1.0,
 ):
     important("Predicting")
     vocab = common.load_json_file(os.path.join(common.cache_dir, "characters.json"))
@@ -41,7 +41,7 @@ def predict(
     index_to_char = vocab["index_to_char"]
 
     def logits_to_index(t):
-        arr = t.detach().cpu().numpy()
+        arr = torch.nn.functional.softmax(t / temperature, dim=-1).detach().cpu().numpy()
         # arr = arr - np.min(arr)
         # arr = np.power(arr, 1.0 / randomess)
         # normalized = np.divide(arr, np.sum(arr))

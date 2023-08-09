@@ -11,7 +11,7 @@ import log
 max_batches = 64 # could be from config
 features = 16
 slots = 10_000
-short_slots = 2
+short_slots = 1
 slot_size = 512
 
 short_memory = np.zeros((

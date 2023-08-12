@@ -3,9 +3,12 @@ import scrape
 from log import (
     important,
     log,
+    pretty_format,
     ProgressStatus,
     set_status_state,
     set_substeps,
+    warning,
+    LogTypes,
 )
 
 from collections import Counter
@@ -13,10 +16,10 @@ import os
 from enum import Enum
 
 vowels = [c for c in "aeiouyåäö".upper()] + [c for c in "aeiouyåäö"]
-vocab_size = 1_000
-word_amount = 500
+vocab_size = 500
+word_amount = 100
 min_word_length = 4
-max_syllable_length = 2
+max_syllable_length = 1
 
 
 def split_to_words(post):
@@ -88,15 +91,17 @@ class SpecialCharacters(Enum):
 if __name__ == "__main__":
     important("Preparing training data")
 
+    dataset_chunk_dir = os.path.join(common.dataset_dir, "chunks")
+    common.ensure_dir(dataset_chunk_dir)
+
     dataset_filenames = [
-        filename
-        for filename in common.list_all_files(os.path.join(common.dataset_dir, "test"))
+        filename for filename in common.list_all_files(scrape.dataset_post_dir)
     ]
     dataset_filenames.sort()
 
     def load_topic(filename):
         log(f"Loading {filename}", repeating_status=True)
-        return [common.load_text_file(filename)]
+        return common.load_json_file(filename)
 
     important("Loading topics")
     set_status_state(ProgressStatus(len(dataset_filenames)))

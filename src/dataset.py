@@ -9,6 +9,7 @@ import random
 import json
 import time
 import datetime as dt
+from prepare_data import SpecialCharacters
 
 
 class Dataset(torch.utils.data.Dataset):
@@ -21,13 +22,13 @@ class Dataset(torch.utils.data.Dataset):
 
         self.topics = common.list_all_files(os.path.join(common.cache_dir, "posts"))
         self.step_length = self.args.sequence_length
-        self.character_labels = np.array(
-            [
-                [1 if n == i else 0 for n in range(vocab_size)]
-                for i in range(vocab_size)
-            ],
-            np.float32,
-        )
+
+    def process_data(self, data):
+        # data = data[:]
+        # for i, v in enumerate(data):
+        #     if random.random() > 0.95:
+        #         data[i] = random.randint(len(SpecialCharacters), vocab_size - 1)
+        return data
 
     def load_batches(self):
         random.shuffle(self.topics)
@@ -35,9 +36,9 @@ class Dataset(torch.utils.data.Dataset):
         for topic_index in range(self.args.batch_size):
             topic = []
             training_topic = []
-            topic_data = common.load_json_file(
+            topic_data = self.process_data(common.load_json_file(
                 self.topics[topic_index % len(self.topics)]
-            )
+            ))
 
             start_index = random.randrange(
                 0, len(topic_data) - self.config.max_length_of_topic
@@ -81,13 +82,13 @@ class Dataset(torch.utils.data.Dataset):
 
     def __len__(self):
         return (
-            max([len(topic) - 1 - self.config.context_length for topic in self.batches])
+            max([len(topic) - 1 for topic in self.batches])
             * self.args.batch_size
         )
 
     def __getitem__(self, index):
         topic = self.batches[index % self.args.batch_size]
-        adjusted_index = self.config.context_length + index // self.args.batch_size
+        adjusted_index = index // self.args.batch_size
 
         if adjusted_index + 1 >= len(topic):
             return None, None
@@ -95,13 +96,10 @@ class Dataset(torch.utils.data.Dataset):
         input_data = topic[adjusted_index][0]
         context_input_data = topic[adjusted_index][2]
         training_data = topic[adjusted_index][1]
-        training_data = np.array(
-            [self.character_labels[i] for i in training_data],
-            np.float32,
-        )
+        training_data = torch.nn.functional.one_hot(torch.from_numpy(training_data).long(), num_classes=vocab_size).float()
 
         return (
             torch.from_numpy(input_data),
             torch.from_numpy(context_input_data),
-            torch.from_numpy(training_data),
+            training_data,
         )

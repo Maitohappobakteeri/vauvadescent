@@ -43,10 +43,12 @@ class Attention(nn.Module):
         )
         self.norm = nn.LayerNorm(in_channels)
     
-    def forward(self, input, query=None):
-        if query is None:
-            query = input
-        a0, _ = self.attention(input, input, query, need_weights=False)
+    def forward(self, input, key=None, value=None):
+        if key is None:
+            key = input
+        if value is None:
+            value = input
+        a0, _ = self.attention(input, key, value, need_weights=False)
         a1 = self.feedforward(a0 + input)
         return self.norm(a0 + a1)
     
@@ -57,10 +59,12 @@ class AttentionNoForward(nn.Module):
         self.attention = nn.MultiheadAttention(in_channels, 1)
         self.norm = nn.LayerNorm(in_channels)
     
-    def forward(self, input, query=None):
-        if query is None:
-            query = input
-        a0, _ = self.attention(input, input, query, need_weights=False)
+    def forward(self, input, key=None, value=None):
+        if key is None:
+            key = input
+        if value is None:
+            value = input
+        a0, _ = self.attention(input, key, value, need_weights=False)
         return self.norm(a0 + input)
 
 class Model(nn.Module):
@@ -70,8 +74,6 @@ class Model(nn.Module):
         self.lstm_size = 16
         self.num_layers = 2
         self.config = config
-
-        self.jx_lstm = 32
 
         self.embedding = nn.Embedding(vocab_size, self.embedding_dim)
         self.pos_embedding = nn.Embedding(config.context_length + 1, self.embedding_dim)
@@ -88,12 +90,8 @@ class Model(nn.Module):
 
         self.context_layer = nn.Sequential(
             nn.Conv1d(
-                config.context_length, self.lstm_size, 8, stride=2, padding=2, bias=False
+                config.short_context_length, self.lstm_size * 2, 8, stride=2, padding=2, bias=False
             ),
-            nn.LeakyReLU(0.1, inplace=True),
-            nn.BatchNorm1d(self.lstm_size),
-            #
-            nn.Conv1d(self.lstm_size, self.lstm_size * 2, 8, stride=2, padding=2, bias=False),
             nn.LeakyReLU(0.1, inplace=True),
             nn.BatchNorm1d(self.lstm_size * 2),
             #
@@ -108,23 +106,23 @@ class Model(nn.Module):
             nn.Conv1d(self.lstm_size * 8, self.lstm_size * 16, 8, 2, 2, bias=False),
             nn.LeakyReLU(0.1, inplace=True),
             nn.BatchNorm1d(self.lstm_size * 16),
-
             #
-            nn.Conv1d(self.lstm_size * 16, self.embedding_dim, 6, bias=False),
+            nn.Conv1d(self.lstm_size * 16, self.embedding_dim, 14, bias=False),
             nn.LeakyReLU(0.1, inplace=True),
             nn.BatchNorm1d(self.embedding_dim),
-            # nn.Tanh(),
         )
 
         self.fc = nn.Sequential(
-            nn.Linear(self.embedding_dim, self.embedding_dim *2, bias=False),
+            nn.Linear(self.embedding_dim * 3, vocab_size * 2, bias=False),
             nn.LeakyReLU(0.1, inplace=True),
-            nn.LayerNorm(self.embedding_dim * 2),
-            nn.Linear(self.embedding_dim *2, vocab_size, bias=False),
+            nn.LayerNorm(vocab_size * 2),
+            nn.Linear(vocab_size * 2, vocab_size, bias=False),
+
         )
 
         self.attention_no_forward = AttentionNoForward(config, self.embedding_dim)
         self.final_attention = Attention(config, self.embedding_dim)
+        self.final_norm = nn.LayerNorm(self.embedding_dim)
 
         self.apply(weights_init)
 
@@ -135,11 +133,14 @@ class Model(nn.Module):
         
         c = torch.flatten(c, end_dim=1)
         c = self.embedding(c)
-        positions = torch.arange(0, self.config.context_length).view((1, -1)).repeat(x.shape[0] * x.shape[1], 1).to("cuda")
+        positions = torch.arange(1, 1 + self.config.context_length).view((1, -1)).repeat(x.shape[0] * x.shape[1], 1).to(self.config.device)
         c = c0 = c + self.pos_embedding(positions) 
         c_shape = c.shape
-        c = self.attention(c.view((x.shape[0] * x.shape[1], -1, self.embedding_dim))).view(c_shape)
 
+        # mask zero!!!!
+        c = self.attention(c.view((x.shape[0] * x.shape[1], -1, self.embedding_dim))).view(c_shape)
+        c_a = c
+        c = c[:, :self.config.short_context_length, :]
         c = self.context_layer(c)
         
         # c = c.reshape((x.shape[0], -1, self.lstm_size * 32))
@@ -160,17 +161,19 @@ class Model(nn.Module):
         # logits = nn.functional.softmax(self.fc(s / temperature), dim=-1)
         # return self.fc(s), state
         # logits = torch.divide(logits, torch.add(torch.max(logits), 1e-11))
-        output_embedding = s.view((x.shape[0] * x.shape[1], 1, self.embedding_dim))
-        output_embedding = torch.cat((c0.view((x.shape[0] * x.shape[1], -1, self.embedding_dim))[:, 1:, :], output_embedding), dim=1)
+        output_embedding = s.reshape((x.shape[0] * x.shape[1], 1, self.embedding_dim))
+        output_embedding = torch.cat((output_embedding, c0.view((x.shape[0] * x.shape[1], -1, self.embedding_dim))[:, :-1, :]), dim=1)
 
-        positions = torch.arange(1, 1 + self.config.context_length).view((1, -1)).repeat(x.shape[0] * x.shape[1], 1).to("cuda")
+        positions = torch.arange(0, self.config.context_length).view((1, -1)).repeat(x.shape[0] * x.shape[1], 1).to(self.config.device)
         output_embedding = output_embedding + self.pos_embedding(positions) 
 
         c1 = self.attention_no_forward(c0.view((x.shape[0] * x.shape[1], -1, self.embedding_dim)))
-        output_embedding = self.final_attention(output_embedding, c1).view((x.shape[0], x.shape[1], -1, self.embedding_dim))
-        output_embedding =  output_embedding[:, :, -1].view((x.shape[0], x.shape[1], self.embedding_dim))
+        output_embedding = self.final_attention(output_embedding, c_a, c1).view((x.shape[0], x.shape[1], -1, self.embedding_dim))
+        output_embedding = torch.sum(output_embedding.transpose(2, 3), dim=-1)
+        output_embedding = self.final_norm(output_embedding)
+        output_embedding = output_embedding.view((x.shape[0], x.shape[1], self.embedding_dim))
         # s = s + s0 + s1 + output_embedding
-        s = s0 + s1 + output_embedding
+        s = torch.cat((s0, s1, output_embedding), dim=-1)
 
         logits = self.fc(s)
 
@@ -180,20 +183,18 @@ class Model(nn.Module):
         # return self.lstm.init_state(sequence_length)
         # return torch.zeros((1,1,1)), torch.zeros((1,1,1))
         return (
-            torch.full(
+            torch.zeros(
                 (
                     self.num_layers,
                     sequence_length,
                     self.embedding_dim,
-                ),
-                1.0 / (self.lstm_size * self.jx_lstm),
+                )
             ),
-            torch.full(
+            torch.zeros(
                 (
                     self.num_layers,
                     sequence_length,
                     self.embedding_dim,
-                ),
-                1.0 / (self.lstm_size * self.jx_lstm),
+                )
             ),
         )

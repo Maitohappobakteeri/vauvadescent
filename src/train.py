@@ -54,7 +54,8 @@ important("Parsing args")
 parser = argparse.ArgumentParser()
 parser.add_argument("--max-epochs", type=int, default=50)
 parser.add_argument("--batch-size", type=int, default=8)
-parser.add_argument("--max-lr", type=float, default=0.0001)
+parser.add_argument("--max-lr", type=float, default=0.001)
+parser.add_argument("--save-margin", type=float, default=0.1)
 
 args = parser.parse_args()
 log(pretty_format(args.__dict__))
@@ -80,20 +81,20 @@ discriminator = Discriminator(config).to(device)
 model.train()
 
 momentum = 0.5
-momentum_max = 0.5
+momentum_max = momentum
 momentum_d = 0.9
-criterion = nn.BCEWithLogitsLoss(reduction="mean")
+criterion = nn.BCELoss(reduction="sum")
 lr_start_div_factor = 10
 optimizer = optim.Adam(
-    model.parameters(), lr=config.max_lr / lr_start_div_factor, betas=(momentum, 0.5)
+    model.parameters(), lr=config.max_lr / lr_start_div_factor, betas=(momentum, momentum)
 )
 optimizer_d = optim.Adam(
     discriminator.parameters(),
     lr=config.max_lr / lr_start_div_factor,
     betas=(momentum_d, 0.9),
 )
-total_steps = 100_000
-pct_start = 0.0001
+total_steps = 100_000 * config.max_length_of_topic
+pct_start = 0.00001
 scheduler = torch.optim.lr_scheduler.OneCycleLR(
     optimizer,
     max_lr=config.max_lr,
@@ -210,6 +211,7 @@ for epoch in range(args.max_epochs):
         # optimizer_d.step()
 
         y_pred, (state_h, state_c) = model((x, c), (state_h, state_c))
+        # y_pred = torch.nn.functional.softmax(y_pred, dim=-1)
         # disc_pred, (_) = discriminator((y_pred, c), (d_state_h, d_state_c))
         real_labes = torch.ones((y.shape[0], y.shape[1], 1)).to(device)
         # loss_d = criterion(disc_pred, real_labes)
@@ -217,7 +219,12 @@ for epoch in range(args.max_epochs):
 
         # pos_weight CBELOSS tai tää
         # loss_r = sigmoid_focal_loss(y_pred, y, reduction="mean")
-        loss_r = criterion(y_pred, y)
+        # loss_r = sigmoid_focal_loss(y_pred, y, reduction="sum") + criterion(positive_y_pred, torch.ones(positive_y_pred.shape, device="cuda"))
+        
+        # positive_y_pred = torch.sum(y_pred * y, dim=-1)
+        # loss_r = criterion(positive_y_pred, torch.ones(positive_y_pred.shape, device="cuda"))
+
+        loss_r = criterion(torch.nn.functional.softmax(y_pred, dim=-1), y) / vocab_size
 
         # loss_d_scaled = loss_d * loss_d_factor * loss_r * 0.1
         loss = loss_r # + loss_d_scaled
@@ -240,9 +247,10 @@ for epoch in range(args.max_epochs):
             for name, param in model.named_parameters():
                 log(f"{name}: {round_log10(torch.mean(torch.abs(param.grad)))}", LogTypes.WARNING)
         optimizer.step()
+        scheduler.step()
         
         loss_diff1 = mean(([previous_model_loss or 999_999] + last_epoch_loss)[-10_000:])
-        loss_diff =  loss_diff1 - (previous_model_loss or 999_999)
+        loss_diff =  loss_diff1 - (previous_model_loss or 999_999) * (1 + config.save_margin)
         isBetter = loss_diff < 0
         log(
             f"{epoch}:{batch} - loss: {round(log10(loss.item()), 2)}, lr: {round(log10(scheduler.get_last_lr()[-1]), 3)}, better: {isBetter} ({round(round_log10(loss_diff1) - round_log10(previous_model_loss), 2)})",
@@ -258,7 +266,6 @@ for epoch in range(args.max_epochs):
     )
     state["lr_step"] += 1
     # scheduler_d.step()
-    scheduler.step()
     state["loss_history"] = loss_history
     state["loss_history_real"] = loss_history_real
     state["loss_history_discriminator"] = loss_history_discriminator
@@ -274,7 +281,7 @@ for epoch in range(args.max_epochs):
 
 last_epoch_loss = mean(last_epoch_loss[-10_000:])
 
-if previous_model_loss is None or last_epoch_loss <= previous_model_loss:
+if previous_model_loss is None or last_epoch_loss <= previous_model_loss * (1 + config.save_margin):
     important("Saving model")
     trained_model = {
         "model_loss": last_epoch_loss,

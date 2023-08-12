@@ -36,6 +36,7 @@ def predict(
     important("Predicting")
     vocab = common.load_json_file(os.path.join(common.cache_dir, "characters.json"))
     words = vocab["words"]
+    syllables = vocab["syllables"]
     word_lookup = words_to_lookup(words)
     char_to_index = vocab["char_to_index"]
     index_to_char = vocab["index_to_char"]
@@ -64,9 +65,12 @@ def predict(
             return " "
         else:
             return char
+        
+    def pad_end(lst):
+        return lst + [0] * (config.context_length - len(lst))
 
-    all_input = [char_to_index[c] for c in split_to_characters(word_lookup, input_text)]
-    input_prev = all_input[config.context_length :]
+    all_input = [char_to_index[c] for c in split_to_characters(word_lookup, syllables, input_text)]
+    input_prev = all_input
     input = torch.from_numpy(np.array(input_prev, np.int32)).unsqueeze(0).to(
         device
     ), torch.from_numpy(
@@ -74,7 +78,7 @@ def predict(
             [
                 [
                     [
-                        all_input[-1 - i - ii] if i + ii < len(all_input) else 0
+                        all_input[i - ii] if i - ii >= 0 else 0
                         for ii in range(0, config.context_length)
                     ]
                     for i in range(len(input_prev))
@@ -110,7 +114,7 @@ def predict(
                         device
                     ),
                     torch.from_numpy(
-                        np.array([[pred_indices[-config.context_length :]]])
+                        np.array([[pad_end(list(reversed(pred_indices[-config.context_length :])))]])
                     ).to(device),
                 ),
                 (state_h.contiguous().to(device), state_c.contiguous().to(device)),
@@ -144,7 +148,7 @@ def initialize_for_predict():
     parser = argparse.ArgumentParser()
     args = parser.parse_args()
     log(pretty_format(args.__dict__))
-    config = Configuration(args)
+    config = Configuration(args, device="cpu")
     model = Model(config).to(device)
     if os.path.isfile("../trained_model"):
         trained_model = torch.load(
@@ -160,4 +164,10 @@ if __name__ == "__main__":
     input_text = (
         "Auttakaa! Mitä teen, kun mun naapurit ei lopeta ees yöllä ja en saa nukuttua"
     )
-    log(predict(model, device, config, input_text), multiline=True, type=LogTypes.DATA)
+    max_predict_chars = 400
+    for temp in range(1, 21):
+        temp = temp / 10
+        important(f"Temperature {temp}")
+        pred = predict(model, device, config, input_text, max_predict_chars=max_predict_chars, temperature=temp)
+        important(f"Predicted {len(pred) - len(input_text)} characters when requesting {max_predict_chars}")
+        log(pred, multiline=True, type=LogTypes.DATA)

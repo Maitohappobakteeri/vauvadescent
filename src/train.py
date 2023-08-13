@@ -80,10 +80,10 @@ model = Model(config).to(device)
 discriminator = Discriminator(config).to(device)
 model.train()
 
-momentum = 0.5
-momentum_max = momentum
+momentum = 0.9
+momentum_max = 0.5
 momentum_d = 0.9
-criterion = nn.BCELoss(reduction="sum")
+criterion = nn.CrossEntropyLoss(reduction="mean")
 lr_start_div_factor = 10
 optimizer = optim.Adam(
     model.parameters(), lr=config.max_lr / lr_start_div_factor, betas=(momentum, momentum)
@@ -224,7 +224,7 @@ for epoch in range(args.max_epochs):
         # positive_y_pred = torch.sum(y_pred * y, dim=-1)
         # loss_r = criterion(positive_y_pred, torch.ones(positive_y_pred.shape, device="cuda"))
 
-        loss_r = criterion(torch.nn.functional.softmax(y_pred, dim=-1), y) / vocab_size
+        loss_r = criterion(y_pred.view(-1, vocab_size), y.view(-1, vocab_size))
 
         # loss_d_scaled = loss_d * loss_d_factor * loss_r * 0.1
         loss = loss_r # + loss_d_scaled
@@ -245,7 +245,7 @@ for epoch in range(args.max_epochs):
         if not has_printed_grad and batch > 20:
             has_printed_grad = True
             for name, param in model.named_parameters():
-                log(f"{name}: {round_log10(torch.mean(torch.abs(param.grad)))}", LogTypes.WARNING)
+                log(f"{name}: {round_log10(torch.mean(torch.abs(param.grad)))}, {round_log10(torch.max(param.grad) - torch.min(param.grad))}", LogTypes.WARNING)
         optimizer.step()
         scheduler.step()
         

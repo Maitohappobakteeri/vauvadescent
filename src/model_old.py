@@ -35,7 +35,7 @@ class Attention(nn.Module):
     def __init__(self, config, in_channels):
         super(Attention, self).__init__()
         self.config = config
-        self.attention = nn.MultiheadAttention(in_channels, 1, batch_first=True)
+        self.attention = nn.MultiheadAttention(in_channels, 1)
         self.feedforward = nn.Sequential(
             nn.LayerNorm(in_channels),
             nn.Linear(in_channels, in_channels * 2, bias=False),
@@ -43,12 +43,12 @@ class Attention(nn.Module):
         )
         self.norm = nn.LayerNorm(in_channels)
     
-    def forward(self, input, key=None, value=None, mask=None):
+    def forward(self, input, key=None, value=None):
         if key is None:
             key = input
         if value is None:
             value = input
-        a0, _ = self.attention(input, key, value, key_padding_mask=mask, need_weights=False)
+        a0, _ = self.attention(input, key, value, need_weights=False)
         a1 = self.feedforward(a0 + input)
         return self.norm(a0 + a1)
     
@@ -56,15 +56,15 @@ class AttentionNoForward(nn.Module):
     def __init__(self, config, in_channels):
         super(AttentionNoForward, self).__init__()
         self.config = config
-        self.attention = nn.MultiheadAttention(in_channels, 1, batch_first=True)
+        self.attention = nn.MultiheadAttention(in_channels, 1)
         self.norm = nn.LayerNorm(in_channels)
     
-    def forward(self, input, key=None, value=None, mask=None):
+    def forward(self, input, key=None, value=None):
         if key is None:
             key = input
         if value is None:
             value = input
-        a0, _ = self.attention(input, key, value, key_padding_mask=mask, need_weights=False)
+        a0, _ = self.attention(input, key, value, need_weights=False)
         return self.norm(a0 + input)
 
 class Model(nn.Module):
@@ -116,41 +116,26 @@ class Model(nn.Module):
 
         self.attention_to_output = nn.Sequential(
             nn.Conv1d(
-                self.config.context_length, 32, 1, 1, 0, bias=False
+                self.embedding_dim, self.embedding_dim, 6, 4, 1, bias=False
             ),
             nn.LeakyReLU(0.1, inplace=True),
-            nn.BatchNorm1d(32),
-
+            nn.BatchNorm1d(self.embedding_dim),
+            # 32
             nn.Conv1d(
-                32, 1, 1, 1, 0, bias=False
+                self.embedding_dim, self.embedding_dim * 2, 6, 4, 1, bias=False
             ),
-
-            # nn.Conv1d(
-            #     self.embedding_dim, self.embedding_dim * 2, 6, 4, 1, bias=False
-            # ),
-            # nn.LeakyReLU(0.1, inplace=True),
-            # nn.BatchNorm1d(self.embedding_dim * 2),
-            # # 32
-            # nn.Conv1d(
-            #     self.embedding_dim * 2, self.embedding_dim * 4, 6, 4, 1, bias=False
-            # ),
-            # nn.LeakyReLU(0.1, inplace=True),
-            # nn.BatchNorm1d(self.embedding_dim * 4),
-            # # 8
-            # nn.Conv1d(
-            #     self.embedding_dim * 4, self.embedding_dim * 8, 8, 1, 0, bias=False
-            # ),
-            # nn.LeakyReLU(0.1, inplace=True),
-            # nn.BatchNorm1d(self.embedding_dim * 8),
+            nn.LeakyReLU(0.1, inplace=True),
+            nn.BatchNorm1d(self.embedding_dim * 2),
+            # 8
+            nn.Conv1d(
+                self.embedding_dim * 2, self.embedding_dim * 4, 8, 1, 0, bias=False
+            ),
+            nn.LeakyReLU(0.1, inplace=True),
+            nn.BatchNorm1d(self.embedding_dim * 4),
         )
 
         self.fc = nn.Sequential(
-            nn.LayerNorm(self.embedding_dim * 3),
-            nn.Linear(self.embedding_dim * 3, self.embedding_dim * 6, bias=False),
-            nn.LeakyReLU(0.1, inplace=True),
-            nn.LayerNorm(self.embedding_dim * 6),
-
-            nn.Linear(self.embedding_dim * 6, vocab_size, bias=False),
+            nn.Linear(self.embedding_dim * (4 + 2), vocab_size, bias=False),
         )
 
         self.attention_no_forward = AttentionNoForward(config, self.embedding_dim)
@@ -164,14 +149,13 @@ class Model(nn.Module):
         e = self.embedding(x)
         
         c = torch.flatten(c, end_dim=1)
-        # c_input_mask = torch.bitwise_not(torch.eq(c, torch.zeros(c.shape, device=self.config.device)).view((x.shape[0] * x.shape[1], -1)))
         c = self.embedding(c)
         positions = torch.arange(1, 1 + self.config.context_length).view((1, -1)).repeat(x.shape[0] * x.shape[1], 1).to(self.config.device)
         c = c0 = c + self.pos_embedding(positions) 
         c_shape = c.shape
 
         # mask zero!!!!
-        c = self.attention(c.view((x.shape[0] * x.shape[1], -1, self.embedding_dim)), mask=None).view(c_shape)
+        c = self.attention(c.view((x.shape[0] * x.shape[1], -1, self.embedding_dim))).view(c_shape)
         c_a = c
         c = c[:, :self.config.short_context_length, :].transpose(1, 2)
         c = self.context_layer(c)
@@ -202,14 +186,13 @@ class Model(nn.Module):
 
         c1 = self.attention_no_forward(c0.view((x.shape[0] * x.shape[1], -1, self.embedding_dim)))
         output_embedding = self.final_attention(output_embedding, c_a, c1).view((x.shape[0], x.shape[1], -1, self.embedding_dim))
-        output_embedding = output_embedding.view((x.shape[0] * x.shape[1], -1, self.embedding_dim))
-        # output_embedding = self.attention_to_output(output_embedding.transpose(1, 2))
+        output_embedding = output_embedding.transpose(2, 3).view((x.shape[0] * x.shape[1], self.embedding_dim, -1))
         output_embedding = self.attention_to_output(output_embedding)
         output_embedding = output_embedding.view((x.shape[0], x.shape[1], -1))
         # s = s + s0 + s1 + output_embedding
         # s = torch.cat((s0, s1, output_embedding), dim=-1)
 
-        logits = self.fc(torch.cat((output_embedding, s0, s1), dim=-1))
+        logits = self.fc(torch.cat((output_embedding, s1, s0), dim=-1))
 
         return logits, state
 

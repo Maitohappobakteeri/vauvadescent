@@ -17,7 +17,7 @@ from enum import Enum
 
 vowels = [c for c in "aeiouyåäö".upper()] + [c for c in "aeiouyåäö"]
 separators = [" ", ":", ";", "=", ",", ".", "!", "?", "-", '"']
-vocab_size = 1_000
+vocab_size = 1000
 word_amount = 300
 syllable_amount = 300
 min_word_length = 4
@@ -208,7 +208,20 @@ if __name__ == "__main__":
         post = split_to_characters(word_lookup, most_common_syllables, post)
         ids = [char_to_index[c] for c in [SpecialCharacters.NEW_POST.value] + post]
         return ids
+    
+    important("Converting posts to training data")
 
+    data_indexed = []
+    next_char = {c: Counter() for c in range(vocab_size)}
+    set_status_state(ProgressStatus(len(data)))
+    for i, topic in enumerate(data):
+        log(f"Converting!", repeating_status=True)
+        post_indexes = [n for post in topic for n in post_to_index(post)]
+        data_indexed.append(post_indexes)
+        for i, c in enumerate(post_indexes):
+            if i + 1 < len(post_indexes):
+                next_char[c][post_indexes[i + 1]] += 1
+    next_char = [next_char[i].most_common() for i in range(vocab_size)]
     log("Writing characters.json")
     common.write_json_file(
         os.path.join(common.cache_dir, "characters.json"),
@@ -218,14 +231,14 @@ if __name__ == "__main__":
             "syllables": most_common_syllables,
             "char_to_index": char_to_index,
             "index_to_char": index_to_char,
+            "next_char_index": next_char,
         },
     )
 
-    important("Converting posts to training data")
+    important("Writing topic json")
 
-    set_status_state(ProgressStatus(len(data)))
-    for i, topic in enumerate(data):
-        post_indexes = [n for post in topic for n in post_to_index(post)]
+    set_status_state(ProgressStatus(len(data_indexed)))
+    for i, post_indexes in enumerate(data_indexed):
         filename = f"{i}_posts.json"
         log(f"Writing {filename}", repeating_status=True)
         common.ensure_dir(os.path.join(common.cache_dir, "posts"))

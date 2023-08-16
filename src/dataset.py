@@ -11,6 +11,12 @@ import time
 import datetime as dt
 from prepare_data import SpecialCharacters
 
+def gaussian(x, mu, sig):
+    return 1./(np.sqrt(2.*np.pi)*sig)*np.exp(-np.power((x-mu)/sig, 2.)/2)
+
+def softmax(n):
+    e = np.exp(n)
+    return e / e.sum()
 
 class Dataset(torch.utils.data.Dataset):
     def __init__(
@@ -22,6 +28,13 @@ class Dataset(torch.utils.data.Dataset):
 
         self.topics = common.list_all_files(os.path.join(common.cache_dir, "posts"))
         self.step_length = self.args.sequence_length
+        # vocab = common.load_json_file(os.path.join(common.cache_dir, "characters.json"))
+        # self.next_char = []
+        # for n in vocab["next_char_index"]:
+        #     nn = [0 for i in range(vocab_size)]
+        #     for i, (index, _count) in enumerate(n):
+        #         nn[index] = gaussian(i, 0.0, 20) * 1000
+        #     self.next_char.append(softmax(np.array(nn)) * 0.01)
 
     def process_data(self, data):
         # data = data[:]
@@ -96,6 +109,9 @@ class Dataset(torch.utils.data.Dataset):
         input_data = topic[adjusted_index][0]
         context_input_data = topic[adjusted_index][2]
         training_data = topic[adjusted_index][1]
+        # training_data = torch.nn.functional.one_hot(torch.from_numpy(training_data).long(), num_classes=vocab_size).float() \
+        #     + torch.from_numpy(np.array([self.next_char[i] for i in training_data]))
+        # training_data = training_data / torch.sum(training_data, dim=-1).view((-1, 1))
         training_data = torch.nn.functional.one_hot(torch.from_numpy(training_data).long(), num_classes=vocab_size).float()
 
         return (

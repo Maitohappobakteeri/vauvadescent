@@ -35,10 +35,11 @@ class Attention(nn.Module):
     def __init__(self, config, in_channels):
         super(Attention, self).__init__()
         self.config = config
-        self.attention = nn.MultiheadAttention(in_channels, 1, batch_first=True)
+        self.attention = nn.MultiheadAttention(in_channels, 1, batch_first=True, dropout=0.1)
         self.feedforward = nn.Sequential(
             nn.LayerNorm(in_channels),
             nn.Linear(in_channels, in_channels * 2, bias=False),
+            nn.Dropout(0.1),
             nn.Linear(in_channels * 2, in_channels, bias=False),
         )
         self.norm = nn.LayerNorm(in_channels)
@@ -56,7 +57,7 @@ class AttentionNoForward(nn.Module):
     def __init__(self, config, in_channels):
         super(AttentionNoForward, self).__init__()
         self.config = config
-        self.attention = nn.MultiheadAttention(in_channels, 1, batch_first=True)
+        self.attention = nn.MultiheadAttention(in_channels, 1, batch_first=True, dropout=0.1)
         self.norm = nn.LayerNorm(in_channels)
     
     def forward(self, input, key=None, value=None, mask=None):
@@ -70,7 +71,7 @@ class AttentionNoForward(nn.Module):
 class Model(nn.Module):
     def __init__(self, config):
         super(Model, self).__init__()
-        self.embedding_dim = 256
+        self.embedding_dim = 128
         self.lstm_size = 16
         self.num_layers = 2
         self.config = config
@@ -82,7 +83,7 @@ class Model(nn.Module):
             input_size=self.embedding_dim,
             hidden_size=self.embedding_dim,
             num_layers=self.num_layers,
-            dropout=0.0,
+            dropout=0.1,
             batch_first=True
         )
 
@@ -106,6 +107,7 @@ class Model(nn.Module):
             ),
             nn.LeakyReLU(0.1, inplace=True),
             nn.BatchNorm1d(self.embedding_dim * 4),
+            nn.Dropout(0.1),
 
             nn.Conv1d(
                 self.embedding_dim * 4, self.embedding_dim, 4, 1, 0, bias=False
@@ -120,6 +122,7 @@ class Model(nn.Module):
             ),
             nn.LeakyReLU(0.1, inplace=True),
             nn.BatchNorm1d(32),
+            nn.Dropout(0.1),
 
             nn.Conv1d(
                 32, 1, 1, 1, 0, bias=False
@@ -149,6 +152,7 @@ class Model(nn.Module):
             nn.Linear(self.embedding_dim * 3, self.embedding_dim * 6, bias=False),
             nn.LeakyReLU(0.1, inplace=True),
             nn.LayerNorm(self.embedding_dim * 6),
+            nn.Dropout(0.1),
 
             nn.Linear(self.embedding_dim * 6, vocab_size, bias=False),
         )

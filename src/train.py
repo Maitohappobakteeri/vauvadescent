@@ -200,9 +200,9 @@ for epoch in range(args.max_epochs):
         (disc_real_loss / loss_div).backward()
         # optimizer_d.step()
         # optimizer_d.zero_grad()
-        y_pred, (_) = model((x, c), (state_h, state_c))
+        y_pred0, (state_h, state_c) = model((x, c), (state_h, state_c))
         fake_labels = torch.zeros((y.shape[0], y.shape[1], 1)).to(device)
-        y_pred = torch.nn.functional.softmax(y_pred, dim=-1)
+        y_pred = torch.nn.functional.softmax(y_pred0.detach(), dim=-1)
         disc_fake, (_) = discriminator((y_pred, c), (d_state_h, d_state_c))
         fake_factor = 1.0 / min(disc_real_loss.item(), 0.1)
         # fake_factor = 1.0
@@ -213,7 +213,7 @@ for epoch in range(args.max_epochs):
         scheduler_d.step()
 
         optimizer.zero_grad()
-        y_pred, (state_h, state_c) = model((x, c), (state_h, state_c))
+        y_pred = y_pred0
         # y_pred = torch.nn.functional.softmax(y_pred, dim=-1)
         disc_pred, (_) = discriminator((torch.nn.functional.softmax(y_pred, dim=-1), c), (d_state_h, d_state_c))
         real_labes = torch.zeros((y.shape[0], y.shape[1], 1)).to(device)
@@ -309,4 +309,5 @@ plot_simple_array(
 )
 # model.db_memory.save_db()
 log(predict(model, device, config, input_text), multiline=True, type=LogTypes.DATA)
+log(predict(model, device, config, "Valitsemasi evästeasetukset estävät tämän sisällön näyttämisen."), multiline=True, type=LogTypes.DATA)
 important("Done")

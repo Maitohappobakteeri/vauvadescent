@@ -156,6 +156,7 @@ class Discriminator(nn.Module):
             nn.Dropout(0.1),
 
             nn.Linear(self.embedding_dim * 6, 1, bias=False),
+            nn.Sigmoid()
         )
 
         self.attention_no_forward = AttentionNoForward(config, self.embedding_dim)

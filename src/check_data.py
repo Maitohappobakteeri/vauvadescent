@@ -13,8 +13,8 @@ for t in topics:
     lengths.append(len(data))
 
 important(f"Tokens in data: {sum(lengths)}")
-important(f"Available unique training segments: {sum(lengths) // 500}")
-important(f"With 32 batches this takes {(sum(lengths) // 500) // 32} iterations")
+important(f"Available unique training segments: {sum(lengths) // 1000}")
+important(f"With 8 batches this takes {(sum(lengths) // 1000) // 8} iterations")
 
 data = np.array(common.load_json_file(random.choice(topics)))
 data = torch.nn.functional.one_hot(torch.from_numpy(data[:128]).long(), num_classes=vocab_size).float()
